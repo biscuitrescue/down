@@ -2,5 +2,8 @@
 /offchain/target/
 /offchain/Cargo.lock
 /offchain/.env.example
-/offchain_back
+/offchain/.env
+/offchain/.env.test
+/offchain/server.log
+/test_data
 target/rust-analyzer/flycheck0
