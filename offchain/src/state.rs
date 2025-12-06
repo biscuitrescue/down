@@ -26,12 +26,4 @@ impl AppState {
             ipfs_client: Arc::new(ipfs_client),
         })
     }
-
-    /// Create AppState with specific clients (useful for testing)
-    pub fn new(chain_client: ChainClient, ipfs_client: IpfsClient) -> Self {
-        Self {
-            chain_client: Arc::new(chain_client),
-            ipfs_client: Arc::new(ipfs_client),
-        }
-    }
 }

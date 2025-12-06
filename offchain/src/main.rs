@@ -4,13 +4,11 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod chain;
 mod config;
-mod error;
-mod handlers;
 mod ipfs;
-mod models;
 mod routes;
 mod state;
 mod supply_chain_handlers;
+mod workflows;
 
 use config::Config;
 use state::AppState;
@@ -68,7 +66,15 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
     tracing::info!("🚀 Server listening on http://{}", addr);
-    tracing::info!("📋 API Documentation:");
+    tracing::info!("");
+    tracing::info!("📋 API Endpoints:");
+    tracing::info!("");
+    tracing::info!("🔄 WORKFLOW ORCHESTRATION:");
+    tracing::info!("  - POST /api/workflow/execute      - Execute complete supply chain workflow");
+    tracing::info!("  - POST /api/workflow/verify-sku   - Verify SKU traceability");
+    tracing::info!("  - POST /api/workflow/verify-farmer - Verify farmer registration");
+    tracing::info!("");
+    tracing::info!("🔗 INDIVIDUAL SUPPLY CHAIN STAGES:");
     tracing::info!("  - POST /api/farmer/register       - Register a new farmer");
     tracing::info!("  - POST /api/farmer/verify         - Verify farmer registration");
     tracing::info!("  - POST /api/fpo/purchase          - Record FPO purchase");
@@ -82,6 +88,9 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("  - POST /api/ai/commit             - Commit AI score");
     tracing::info!("  - POST /api/ai/reveal             - Reveal AI score");
     tracing::info!("  - POST /api/ipfs/upload           - Upload data to IPFS");
+    tracing::info!("");
+    tracing::info!("📚 See WORKFLOW.md for complete integration guide");
+    tracing::info!("💡 Use /api/workflow/execute for end-to-end automation");
 
     axum::serve(listener, app).await?;
 

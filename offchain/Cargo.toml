@@ -28,6 +28,15 @@ dotenvy = "0.15"
 # HTTP client for IPFS
 reqwest = { version = "0.12", default-features = false, features = ["multipart", "json", "rustls-tls"] }
 
+# Date and time
+chrono = "0.4"
+
+# Random number generation
+rand = "0.8"
+
+# Hex encoding/decoding
+hex = "0.4"
+
 # Ethereum / Blockchain
 alloy = { version = "0.6", default-features = false, features = [
     "contract",

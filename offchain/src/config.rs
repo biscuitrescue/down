@@ -15,6 +15,7 @@ pub enum Environment {
 }
 
 impl Environment {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "production" | "prod" => Environment::Production,
@@ -25,14 +26,6 @@ impl Environment {
 
     pub fn is_production(&self) -> bool {
         matches!(self, Environment::Production)
-    }
-
-    pub fn is_development(&self) -> bool {
-        matches!(self, Environment::Development)
-    }
-
-    pub fn is_test(&self) -> bool {
-        matches!(self, Environment::Test)
     }
 }
 

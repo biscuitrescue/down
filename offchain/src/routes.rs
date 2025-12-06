@@ -1,8 +1,23 @@
 use crate::supply_chain_handlers;
+use crate::workflows;
 use axum::{routing::post, Router};
 
 pub fn configure_routes(state: crate::state::AppState) -> Router {
     Router::new()
+        // ==================== WORKFLOW ROUTES ====================
+        // Complete end-to-end workflow
+        .route(
+            "/api/workflow/execute",
+            post(workflows::http_handlers::execute_workflow),
+        )
+        .route(
+            "/api/workflow/verify-sku",
+            post(workflows::http_handlers::verify_sku_handler),
+        )
+        .route(
+            "/api/workflow/verify-farmer",
+            post(workflows::http_handlers::verify_farmer_handler),
+        )
         // ==================== SUPPLY CHAIN ROUTES ====================
         // Stage 1: Farmer Registration
         .route(

@@ -156,14 +156,6 @@ impl IpfsClient {
 
         Ok(ipfs_response.hash)
     }
-
-    pub fn api_url(&self) -> &str {
-        &self.config.api_url
-    }
-
-    pub fn has_auth(&self) -> bool {
-        self.config.project_id.is_some() && self.config.project_secret.is_some()
-    }
 }
 
 // ==================== IPFS HTTP HANDLERS ====================

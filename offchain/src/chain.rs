@@ -1,7 +1,7 @@
 use alloy::{
     network::EthereumWallet,
-    primitives::{Address, FixedBytes, U256},
-    providers::{Provider, ProviderBuilder},
+    primitives::{Address, FixedBytes},
+    providers::ProviderBuilder,
     rpc::types::TransactionReceipt,
     signers::local::PrivateKeySigner,
     sol,
@@ -32,20 +32,6 @@ type AppProvider = alloy::providers::fillers::FillProvider<
     Http<Client>,
     alloy::network::Ethereum,
 >;
-
-pub const ROLE_ADMIN: u8 = 1;
-pub const ROLE_FARMER: u8 = 2;
-pub const ROLE_FPO: u8 = 4;
-pub const ROLE_WAREHOUSE: u8 = 8;
-pub const ROLE_LOGISTICS: u8 = 16;
-pub const ROLE_PROCESSOR: u8 = 32;
-pub const ROLE_PACKAGER: u8 = 64;
-pub const ROLE_AI_ORACLE: u8 = 128;
-
-pub const TRANSFER_FPO_PURCHASE: u8 = 1;
-pub const TRANSFER_WAREHOUSE: u8 = 2;
-pub const TRANSFER_PROCESSOR: u8 = 3;
-pub const TRANSFER_RETAIL: u8 = 4;
 
 sol! {
     #[sol(rpc)]
@@ -235,8 +221,6 @@ impl ChainConfig {
 #[derive(Clone)]
 pub struct ChainClient {
     contract: OilseedValueChain::OilseedValueChainInstance<Http<Client>, AppProvider>,
-    provider: AppProvider,
-    signer: PrivateKeySigner,
 }
 
 impl ChainClient {
@@ -251,7 +235,7 @@ impl ChainClient {
             "Initialized signer"
         );
 
-        let wallet = EthereumWallet::from(signer.clone());
+        let wallet = EthereumWallet::from(signer);
 
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
@@ -270,90 +254,14 @@ impl ChainClient {
             "Initialized ChainClient"
         );
 
-        let contract = OilseedValueChain::new(contract_address, provider.clone());
+        let contract = OilseedValueChain::new(contract_address, provider);
 
-        Ok(Self {
-            contract,
-            provider,
-            signer,
-        })
+        Ok(Self { contract })
     }
 
     pub async fn from_env() -> Result<Self> {
         let config = ChainConfig::from_env()?;
         Self::new(config).await
-    }
-
-    pub fn address(&self) -> Address {
-        self.signer.address()
-    }
-
-    pub async fn grant_role(&self, account: Address, role: u8) -> Result<TransactionReceipt> {
-        tracing::info!(?account, role, "Granting role");
-
-        let tx = self
-            .contract
-            .grantRole(account, role)
-            .send()
-            .await
-            .context("Failed to send grantRole transaction")?;
-
-        let receipt = tx
-            .get_receipt()
-            .await
-            .context("Failed to get transaction receipt")?;
-
-        tracing::info!(
-            tx_hash = ?receipt.transaction_hash,
-            "Role granted successfully"
-        );
-
-        Ok(receipt)
-    }
-
-    pub async fn revoke_role(&self, account: Address, role: u8) -> Result<TransactionReceipt> {
-        tracing::info!(?account, role, "Revoking role");
-
-        let tx = self
-            .contract
-            .revokeRole(account, role)
-            .send()
-            .await
-            .context("Failed to send revokeRole transaction")?;
-
-        let receipt = tx
-            .get_receipt()
-            .await
-            .context("Failed to get transaction receipt")?;
-
-        tracing::info!(
-            tx_hash = ?receipt.transaction_hash,
-            "Role revoked successfully"
-        );
-
-        Ok(receipt)
-    }
-
-    pub async fn has_role(&self, account: Address, role: u8) -> Result<bool> {
-        let result = self
-            .contract
-            .hasRole(account, role)
-            .call()
-            .await
-            .context("Failed to call hasRole")?;
-
-        Ok(result._0)
-    }
-
-    pub async fn get_roles(&self, account: Address) -> Result<u8> {
-        let result = self
-            .contract
-            .getRoles(account)
-            .call()
-            .await
-            .context("Failed to call getRoles")?;
-
-        Ok(result._0)
     }
 
     pub async fn register_farmer(
@@ -381,20 +289,6 @@ impl ChainClient {
         );
 
         Ok(receipt)
-    }
-
-    pub async fn get_farmer(
-        &self,
-        farmer_did: FixedBytes<32>,
-    ) -> Result<OilseedValueChain::FarmerRecord> {
-        let result = self
-            .contract
-            .farmers(farmer_did)
-            .call()
-            .await
-            .context("Failed to call farmers")?;
-
-        Ok(result._0)
     }
 
     pub async fn verify_farmer(
@@ -495,20 +389,6 @@ impl ChainClient {
         Ok(receipt)
     }
 
-    pub async fn get_warehouse_state(
-        &self,
-        warehouse_id: FixedBytes<32>,
-    ) -> Result<(FixedBytes<32>, u64)> {
-        let result = self
-            .contract
-            .getWarehouseState(warehouse_id)
-            .call()
-            .await
-            .context("Failed to call getWarehouseState")?;
-
-        Ok((result.stateHash, result.lastUpdated))
-    }
-
     pub async fn record_logistics(
         &self,
         shipment_id: FixedBytes<32>,
@@ -537,34 +417,6 @@ impl ChainClient {
         tracing::info!(
             tx_hash = ?receipt.transaction_hash,
             "Logistics milestone recorded successfully"
-        );
-
-        Ok(receipt)
-    }
-
-    pub async fn batch_record_logistics(
-        &self,
-        shipment_ids: Vec<FixedBytes<32>>,
-        location_hashes: Vec<FixedBytes<32>>,
-        delivery_statuses: Vec<bool>,
-    ) -> Result<TransactionReceipt> {
-        tracing::info!(count = shipment_ids.len(), "Batch recording logistics");
-
-        let tx = self
-            .contract
-            .batchRecordLogistics(shipment_ids, location_hashes, delivery_statuses)
-            .send()
-            .await
-            .context("Failed to send batchRecordLogistics transaction")?;
-
-        let receipt = tx
-            .get_receipt()
-            .await
-            .context("Failed to get transaction receipt")?;
-
-        tracing::info!(
-            tx_hash = ?receipt.transaction_hash,
-            "Logistics batch recorded successfully"
         );
 
         Ok(receipt)
@@ -725,45 +577,6 @@ impl ChainClient {
         );
 
         Ok(receipt)
-    }
-
-    pub async fn get_ai_score(
-        &self,
-        batch_hash: FixedBytes<32>,
-    ) -> Result<(FixedBytes<32>, FixedBytes<32>, u64, u64)> {
-        let result = self
-            .contract
-            .getAIScore(batch_hash)
-            .call()
-            .await
-            .context("Failed to call getAIScore")?;
-
-        Ok((
-            result.commitHash,
-            result.revealHash,
-            result.committedAt,
-            result.revealedAt,
-        ))
-    }
-
-    pub async fn get_block_number(&self) -> Result<u64> {
-        let block_number = self
-            .provider
-            .get_block_number()
-            .await
-            .context("Failed to get block number")?;
-
-        Ok(block_number)
-    }
-
-    pub async fn get_balance(&self) -> Result<U256> {
-        let balance = self
-            .provider
-            .get_balance(self.signer.address())
-            .await
-            .context("Failed to get balance")?;
-
-        Ok(balance)
     }
 }
 
