@@ -2,6 +2,12 @@ use anyhow::{Context, Result};
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::sync::Arc;
+use tracing;
+
+// ======================================================
+//                 CONFIGURATION
+// ======================================================
 
 #[derive(Debug, Clone)]
 pub struct IpfsConfig {
@@ -11,10 +17,9 @@ pub struct IpfsConfig {
 }
 
 impl IpfsConfig {
-    //  IPFS_API_URL
     pub fn from_env() -> Result<Self> {
         let api_url =
-            env::var("IPFS_API_URL").context("IPFS_API_URL environment variable is required")?;
+            env::var("IPFS_API_URL").context("Missing required env: IPFS_API_URL")?;
 
         let project_id = env::var("IPFS_PROJECT_ID").ok();
         let project_secret = env::var("IPFS_PROJECT_SECRET").ok();
@@ -33,17 +38,21 @@ impl IpfsConfig {
     }
 }
 
+// ======================================================
+//                 IPFS RESPONSE
+// ======================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct IpfsAddResponse {
-    // CID
     hash: String,
-    #[allow(dead_code)]
     name: String,
-    #[allow(dead_code)]
     size: String,
 }
+
+// ======================================================
+//                 IPFS CLIENT
+// ======================================================
 
 #[derive(Debug, Clone)]
 pub struct IpfsClient {
@@ -53,110 +62,82 @@ pub struct IpfsClient {
 
 impl IpfsClient {
     pub fn new(config: IpfsConfig) -> Self {
-        let http_client = reqwest::Client::new();
         Self {
-            http_client,
+            http_client: reqwest::Client::new(),
             config,
         }
     }
 
     pub fn from_env() -> Result<Self> {
-        let config = IpfsConfig::from_env()?;
-        Ok(Self::new(config))
+        Ok(Self::new(IpfsConfig::from_env()?))
     }
 
-    // ?????????????????????????????
+    // -------------------------------
+    // Upload JSON → IPFS
+    // -------------------------------
     pub async fn upload_json<T: Serialize>(&self, value: &T) -> Result<String> {
-        tracing::debug!("Serializing JSON data for IPFS upload");
+        tracing::info!("Serializing JSON payload for IPFS upload");
 
-        let json_bytes = serde_json::to_vec(value).context("Failed to serialize value to JSON")?;
+        let json_bytes = serde_json::to_vec(value)
+            .context("Failed to serialize JSON to bytes")?;
 
         tracing::debug!(
-            size_bytes = json_bytes.len(),
-            "JSON serialized, uploading to IPFS"
+            size = json_bytes.len(),
+            "JSON serialized; uploading to IPFS"
         );
 
         self.upload_bytes(json_bytes).await
     }
 
-    // Uploads raw bytes to IPFS
-    //
-    // Uploads the provided bytes directly to IPFS.
-    // Returns the CID (Content Identifier) hash as a string.
-    //
-    // # Arguments
-    // * `bytes` - Raw bytes to upload
-    //
-    // # Returns
-    // * `Result<String>` - The CID hash on success
-    //
-    // # Example
-    // ```ignore
-    // let data = b"Hello, IPFS!".to_vec();
-    // let cid = ipfs_client.upload_bytes(data).await?;
-    // ```
-    // ???????????????????????????????????????????????????
+    // -------------------------------
+    // Upload raw bytes → IPFS
+    // -------------------------------
     pub async fn upload_bytes(&self, bytes: Vec<u8>) -> Result<String> {
         let url = format!("{}/api/v0/add", self.config.api_url);
 
         tracing::info!(
-            url = %url,
-            size_bytes = bytes.len(),
-            "Uploading data to IPFS"
+            %url,
+            size = bytes.len(),
+            "Uploading file bytes to IPFS"
         );
 
-        // Create multipart form with the file data
         let part = Part::bytes(bytes)
             .file_name("file")
             .mime_str("application/octet-stream")
-            .context("Failed to set MIME type")?;
+            .context("Failed to set MIME type for IPFS upload")?;
 
         let form = Form::new().part("file", part);
 
-        // Build the request
         let mut request = self.http_client.post(&url).multipart(form);
 
-        // Add Basic Auth if credentials are provided
-        if let (Some(ref project_id), Some(ref project_secret)) =
+        // Add authentication if provided
+        if let (Some(id), Some(secret)) =
             (&self.config.project_id, &self.config.project_secret)
         {
-            tracing::debug!("Using Basic Auth for IPFS request");
-            request = request.basic_auth(project_id, Some(project_secret));
+            tracing::debug!("Using Basic Auth for IPFS upload");
+            request = request.basic_auth(id, Some(secret));
         }
 
-        // Send the request
         let response = request
             .send()
             .await
-            .context("Failed to send request to IPFS API")?;
+            .context("Failed to send IPFS upload request")?;
 
-        // Check for HTTP errors
         let status = response.status();
         if !status.is_success() {
-            let error_body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            tracing::error!(
-                status = %status,
-                body = %error_body,
-                "IPFS API returned error"
-            );
-            anyhow::bail!("IPFS API error ({}): {}", status, error_body);
+            let body = response.text().await.unwrap_or_default();
+            tracing::error!(%status, %body, "IPFS API returned an error");
+            anyhow::bail!("IPFS API error ({}): {}", status, body);
         }
 
-        // Parse the response
-        let ipfs_response: IpfsAddResponse = response
+        let parsed: IpfsAddResponse = response
             .json()
             .await
-            .context("Failed to parse IPFS API response")?;
+            .context("Failed to parse IPFS response JSON")?;
 
-        tracing::info!(
-            cid = %ipfs_response.hash,
-            "Successfully uploaded to IPFS"
-        );
+        tracing::info!(cid = %parsed.hash, "File uploaded to IPFS");
 
-        Ok(ipfs_response.hash)
+        Ok(parsed.hash)
     }
 
     pub fn api_url(&self) -> &str {
@@ -168,19 +149,19 @@ impl IpfsClient {
     }
 }
 
-use std::sync::Arc;
+// ======================================================
+//                 APP STATE
+// ======================================================
 
 #[derive(Clone)]
 pub struct AppState {
     pub ipfs_client: Arc<IpfsClient>,
-    // database pool config
 }
 
 impl AppState {
     pub fn new() -> Result<Self> {
-        let ipfs_client = IpfsClient::from_env()?;
         Ok(Self {
-            ipfs_client: Arc::new(ipfs_client),
+            ipfs_client: Arc::new(IpfsClient::from_env()?),
         })
     }
 
@@ -191,8 +172,10 @@ impl AppState {
     }
 }
 
+// ======================================================
+//                 REQUEST / RESPONSE MODELS
+// ======================================================
 
-// all boilerplate pls fix :TODO
 use axum::{extract::State, http::StatusCode, Json};
 
 #[derive(Debug, Deserialize)]
@@ -211,20 +194,22 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
-// also ????????????????
+// ======================================================
+//                 ROUTE HANDLER
+// ======================================================
+
 pub async fn upload_to_ipfs(
     State(state): State<AppState>,
     Json(payload): Json<UploadRequest>,
 ) -> Result<Json<UploadResponse>, (StatusCode, Json<ErrorResponse>)> {
     tracing::info!("Received IPFS upload request");
 
-    // Upload the JSON data to IPFS
     let cid = state
         .ipfs_client
         .upload_json(&payload.data)
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "Failed to upload to IPFS");
+            tracing::error!(%e, "IPFS upload failed");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
@@ -233,17 +218,22 @@ pub async fn upload_to_ipfs(
             )
         })?;
 
-    // Construct the gateway URL (using public IPFS gateway)
     let gateway_url = format!("https://ipfs.io/ipfs/{}", cid);
 
-    tracing::info!(cid = %cid, "Successfully uploaded to IPFS");
+    tracing::info!(%cid, "Successfully uploaded JSON to IPFS");
 
     Ok(Json(UploadResponse { cid, gateway_url }))
 }
 
+// ======================================================
+//                 ROUTER
+// ======================================================
+
 use axum::{routing::post, Router};
+
 pub fn ipfs_router(state: AppState) -> Router {
     Router::new()
         .route("/api/ipfs/upload", post(upload_to_ipfs))
         .with_state(state)
 }
+
