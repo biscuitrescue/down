@@ -33,7 +33,6 @@ impl IpfsConfig {
     }
 }
 
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct IpfsAddResponse {
@@ -168,31 +167,7 @@ impl IpfsClient {
     }
 }
 
-use std::sync::Arc;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub ipfs_client: Arc<IpfsClient>,
-    // database pool config
-}
-
-impl AppState {
-    pub fn new() -> Result<Self> {
-        let ipfs_client = IpfsClient::from_env()?;
-        Ok(Self {
-            ipfs_client: Arc::new(ipfs_client),
-        })
-    }
-
-    pub fn with_ipfs_client(ipfs_client: IpfsClient) -> Self {
-        Self {
-            ipfs_client: Arc::new(ipfs_client),
-        }
-    }
-}
-
-
-// all boilerplate pls fix :TODO
+// ==================== IPFS HTTP HANDLERS ====================
 use axum::{extract::State, http::StatusCode, Json};
 
 #[derive(Debug, Deserialize)]
@@ -211,9 +186,8 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
-// also ????????????????
 pub async fn upload_to_ipfs(
-    State(state): State<AppState>,
+    State(state): State<crate::state::AppState>,
     Json(payload): Json<UploadRequest>,
 ) -> Result<Json<UploadResponse>, (StatusCode, Json<ErrorResponse>)> {
     tracing::info!("Received IPFS upload request");
@@ -239,11 +213,4 @@ pub async fn upload_to_ipfs(
     tracing::info!(cid = %cid, "Successfully uploaded to IPFS");
 
     Ok(Json(UploadResponse { cid, gateway_url }))
-}
-
-use axum::{routing::post, Router};
-pub fn ipfs_router(state: AppState) -> Router {
-    Router::new()
-        .route("/api/ipfs/upload", post(upload_to_ipfs))
-        .with_state(state)
 }

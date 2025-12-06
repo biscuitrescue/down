@@ -5,12 +5,6 @@ pub struct Config {
     pub port: u16,
     pub host: String,
     pub environment: Environment,
-    // pub ipfs_api_url: String,
-    // pub ipfs_project_id: String,
-    // pub ipfs_project_secret: String,
-    // pub rpc_url: String,
-    // pub private_key: String,
-    // pub db_url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
