@@ -24,9 +24,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Environment variables
 dotenvy = "0.15"
-reqwest = { version = "0.12.24", default-features = false, features = ["json", "multipart", "native-tls"] }
 
 # HTTP client for IPFS
-# reqwest = { version = "0.12", default-features = false, features = ["multipart", "json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["multipart", "json", "rustls-tls"] }
+
+# Ethereum / Blockchain
+alloy = { version = "0.6", features = ["full", "node-bindings", "rpc-types-eth", "signer-local"] }
 
 [dev-dependencies]
