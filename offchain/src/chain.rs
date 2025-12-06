@@ -1,8 +1,7 @@
 use alloy::{
-    contract::{ContractInstance, Interface},
     network::EthereumWallet,
-    primitives::{Address, Bytes, FixedBytes, U256},
-    providers::{Provider, ProviderBuilder, RootProvider},
+    primitives::{Address, FixedBytes, U256},
+    providers::{Provider, ProviderBuilder},
     rpc::types::TransactionReceipt,
     signers::local::PrivateKeySigner,
     sol,
@@ -10,7 +9,26 @@ use alloy::{
 };
 use anyhow::{Context, Result};
 use std::env;
-use std::sync::Arc;
+
+// Type alias for the provider with all recommended fillers
+type AppProvider = alloy::providers::fillers::FillProvider<
+    alloy::providers::fillers::JoinFill<
+        alloy::providers::Identity,
+        alloy::providers::fillers::JoinFill<
+            alloy::providers::fillers::GasFiller,
+            alloy::providers::fillers::JoinFill<
+                alloy::providers::fillers::BlobGasFiller,
+                alloy::providers::fillers::JoinFill<
+                    alloy::providers::fillers::NonceFiller,
+                    alloy::providers::fillers::ChainIdFiller,
+                >,
+            >,
+        >,
+    >,
+    alloy::providers::RootProvider<Http<Client>>,
+    Http<Client>,
+    alloy::network::Ethereum,
+>;
 
 pub const ROLE_ADMIN: u8 = 1;
 pub const ROLE_FARMER: u8 = 2;
@@ -213,9 +231,8 @@ impl ChainConfig {
 
 #[derive(Clone)]
 pub struct ChainClient {
-    contract:
-        OilseedValueChain::OilseedValueChainInstance<Http<Client>, Arc<RootProvider<Http<Client>>>>,
-    provider: Arc<RootProvider<Http<Client>>>,
+    contract: OilseedValueChain::OilseedValueChainInstance<Http<Client>, AppProvider>,
+    provider: AppProvider,
     signer: PrivateKeySigner,
 }
 
@@ -238,8 +255,6 @@ impl ChainClient {
             .wallet(wallet)
             .on_http(config.rpc_url.parse().context("Invalid RPC URL")?);
 
-        let provider = Arc::new(provider);
-
         let contract_address: Address = config
             .contract_address
             .parse()
@@ -252,7 +267,7 @@ impl ChainClient {
             "Initialized ChainClient"
         );
 
-        let contract = OilseedValueChain::new(contract_address, provider.clone());
+        let contract = OilseedValueChain::new(contract_address, &provider);
 
         Ok(Self {
             contract,
