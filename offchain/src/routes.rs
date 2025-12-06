@@ -1,8 +1,5 @@
 use crate::supply_chain_handlers;
-use axum::{
-    routing::{get, post},
-    Router,
-};
+use axum::{routing::post, Router};
 
 pub fn configure_routes(state: crate::state::AppState) -> Router {
     Router::new()

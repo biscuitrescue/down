@@ -10,20 +10,23 @@ use alloy::{
 use anyhow::{Context, Result};
 use std::env;
 
-// Type alias for the provider with all recommended fillers
+// Type alias for the provider with all recommended fillers + wallet
 type AppProvider = alloy::providers::fillers::FillProvider<
     alloy::providers::fillers::JoinFill<
-        alloy::providers::Identity,
         alloy::providers::fillers::JoinFill<
-            alloy::providers::fillers::GasFiller,
+            alloy::providers::Identity,
             alloy::providers::fillers::JoinFill<
-                alloy::providers::fillers::BlobGasFiller,
+                alloy::providers::fillers::GasFiller,
                 alloy::providers::fillers::JoinFill<
-                    alloy::providers::fillers::NonceFiller,
-                    alloy::providers::fillers::ChainIdFiller,
+                    alloy::providers::fillers::BlobGasFiller,
+                    alloy::providers::fillers::JoinFill<
+                        alloy::providers::fillers::NonceFiller,
+                        alloy::providers::fillers::ChainIdFiller,
+                    >,
                 >,
             >,
         >,
+        alloy::providers::fillers::WalletFiller<EthereumWallet>,
     >,
     alloy::providers::RootProvider<Http<Client>>,
     Http<Client>,
@@ -267,7 +270,7 @@ impl ChainClient {
             "Initialized ChainClient"
         );
 
-        let contract = OilseedValueChain::new(contract_address, &provider);
+        let contract = OilseedValueChain::new(contract_address, provider.clone());
 
         Ok(Self {
             contract,
