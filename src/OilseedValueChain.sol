@@ -49,26 +49,17 @@ contract OilseedValueChain {
         _;
     }
 
-    function grantRole(
-        address account,
-        uint256 role
-    ) external onlyRole(ROLE_ADMIN) {
+    function grantRole(address account, uint256 role) external onlyRole(ROLE_ADMIN) {
         roles[account] |= role; // Set bit(s)
         emit RoleGranted(account, role);
     }
 
-    function revokeRole(
-        address account,
-        uint256 role
-    ) external onlyRole(ROLE_ADMIN) {
+    function revokeRole(address account, uint256 role) external onlyRole(ROLE_ADMIN) {
         roles[account] &= ~role; // Clear bit(s)
         emit RoleRevoked(account, role);
     }
 
-    function hasRole(
-        address account,
-        uint256 role
-    ) external view returns (bool) {
+    function hasRole(address account, uint256 role) external view returns (bool) {
         return roles[account] & role != 0;
     }
 
@@ -88,26 +79,17 @@ contract OilseedValueChain {
     mapping(bytes32 => FarmerRecord) public farmers;
 
     // metadataCID: IPFS CID for farmer profile JSON (optional, can be empty string)
-    event FarmerRegistered(
-        bytes32 indexed farmerDID,
-        bytes32 indexed cropIDHash,
-        uint64 timestamp,
-        string metadataCID
-    );
+    event FarmerRegistered(bytes32 indexed farmerDID, bytes32 indexed cropIDHash, uint64 timestamp, string metadataCID);
 
-    function registerFarmer(
-        bytes32 farmerDID,
-        bytes32 cropIDHash,
-        string calldata metadataCID
-    ) external onlyRole(ROLE_FARMER) {
+    function registerFarmer(bytes32 farmerDID, bytes32 cropIDHash, string calldata metadataCID)
+        external
+        onlyRole(ROLE_FARMER)
+    {
         if (farmers[farmerDID].registeredAt != 0) revert AlreadyRegistered();
 
         uint64 timestamp = uint64(block.timestamp);
 
-        farmers[farmerDID] = FarmerRecord({
-            cropIDHash: cropIDHash,
-            registeredAt: timestamp
-        });
+        farmers[farmerDID] = FarmerRecord({cropIDHash: cropIDHash, registeredAt: timestamp});
 
         emit FarmerRegistered(farmerDID, cropIDHash, timestamp, metadataCID);
     }
@@ -131,20 +113,14 @@ contract OilseedValueChain {
         string metadataCID
     );
 
-    function fpoPurchase(
-        bytes32 batchHash,
-        bytes32 farmerDID,
-        string calldata metadataCID
-    ) external onlyRole(ROLE_FPO) {
+    function fpoPurchase(bytes32 batchHash, bytes32 farmerDID, string calldata metadataCID)
+        external
+        onlyRole(ROLE_FPO)
+    {
         if (farmers[farmerDID].registeredAt == 0) revert FarmerNotRegistered();
 
         emit OwnershipTransfer(
-            batchHash,
-            farmerDID,
-            msg.sender,
-            uint64(block.timestamp),
-            TRANSFER_FPO_PURCHASE,
-            metadataCID
+            batchHash, farmerDID, msg.sender, uint64(block.timestamp), TRANSFER_FPO_PURCHASE, metadataCID
         );
     }
 
@@ -160,31 +136,17 @@ contract OilseedValueChain {
     mapping(bytes32 => WarehouseState) public warehouseStates;
 
     // metadataCID: IPFS CID pointing to IoT rollup JSON, audits, etc.
-    event WarehouseStateUpdated(
-        bytes32 indexed warehouseId,
-        bytes32 stateHash,
-        uint64 timestamp,
-        string metadataCID
-    );
+    event WarehouseStateUpdated(bytes32 indexed warehouseId, bytes32 stateHash, uint64 timestamp, string metadataCID);
 
-    function updateWarehouseState(
-        bytes32 warehouseId,
-        bytes32 stateHash,
-        string calldata metadataCID
-    ) external onlyRole(ROLE_WAREHOUSE) {
+    function updateWarehouseState(bytes32 warehouseId, bytes32 stateHash, string calldata metadataCID)
+        external
+        onlyRole(ROLE_WAREHOUSE)
+    {
         uint64 timestamp = uint64(block.timestamp);
 
-        warehouseStates[warehouseId] = WarehouseState({
-            stateHash: stateHash,
-            lastUpdated: timestamp
-        });
+        warehouseStates[warehouseId] = WarehouseState({stateHash: stateHash, lastUpdated: timestamp});
 
-        emit WarehouseStateUpdated(
-            warehouseId,
-            stateHash,
-            timestamp,
-            metadataCID
-        );
+        emit WarehouseStateUpdated(warehouseId, stateHash, timestamp, metadataCID);
     }
 
     // ======================== STAGE 4: LOGISTICS TRACKING ========================
@@ -193,26 +155,14 @@ contract OilseedValueChain {
 
     // metadataCID: IPFS CID for signed GPS trace / documents
     event LogisticsMilestone(
-        bytes32 indexed shipmentId,
-        bytes32 locationHash,
-        uint64 timestamp,
-        bool isDelivered,
-        string metadataCID
+        bytes32 indexed shipmentId, bytes32 locationHash, uint64 timestamp, bool isDelivered, string metadataCID
     );
 
-    function recordLogistics(
-        bytes32 shipmentId,
-        bytes32 locationHash,
-        bool isDelivered,
-        string calldata metadataCID
-    ) external onlyRole(ROLE_LOGISTICS) {
-        emit LogisticsMilestone(
-            shipmentId,
-            locationHash,
-            uint64(block.timestamp),
-            isDelivered,
-            metadataCID
-        );
+    function recordLogistics(bytes32 shipmentId, bytes32 locationHash, bool isDelivered, string calldata metadataCID)
+        external
+        onlyRole(ROLE_LOGISTICS)
+    {
+        emit LogisticsMilestone(shipmentId, locationHash, uint64(block.timestamp), isDelivered, metadataCID);
     }
 
     // ======================== STAGE 5: PROCESSING ========================
@@ -234,13 +184,7 @@ contract OilseedValueChain {
         bytes32[] calldata outputBatchHashes,
         string calldata metadataCID
     ) external onlyRole(ROLE_PROCESSOR) {
-        emit BatchProcessed(
-            inputBatchHash,
-            transformHash,
-            outputBatchHashes,
-            uint64(block.timestamp),
-            metadataCID
-        );
+        emit BatchProcessed(inputBatchHash, transformHash, outputBatchHashes, uint64(block.timestamp), metadataCID);
     }
 
     // ======================== STAGE 6: PACKAGING ========================
@@ -257,36 +201,21 @@ contract OilseedValueChain {
 
     // metadataCID: IPFS CID for packaging manifest (unit list, labels, etc.)
     event SKUPackaged(
-        bytes32 indexed skuId,
-        bytes32 indexed parentBatchHash,
-        bytes32 merkleRoot,
-        uint64 timestamp,
-        string metadataCID
+        bytes32 indexed skuId, bytes32 indexed parentBatchHash, bytes32 merkleRoot, uint64 timestamp, string metadataCID
     );
 
-    function createSKU(
-        bytes32 skuId,
-        bytes32 parentBatchHash,
-        bytes32 merkleRoot,
-        string calldata metadataCID
-    ) external onlyRole(ROLE_PACKAGER) {
+    function createSKU(bytes32 skuId, bytes32 parentBatchHash, bytes32 merkleRoot, string calldata metadataCID)
+        external
+        onlyRole(ROLE_PACKAGER)
+    {
         if (packages[skuId].packagedAt != 0) revert SKUAlreadyExists();
 
         uint64 timestamp = uint64(block.timestamp);
 
-        packages[skuId] = PackageRecord({
-            parentBatchHash: parentBatchHash,
-            merkleRoot: merkleRoot,
-            packagedAt: timestamp
-        });
+        packages[skuId] =
+            PackageRecord({parentBatchHash: parentBatchHash, merkleRoot: merkleRoot, packagedAt: timestamp});
 
-        emit SKUPackaged(
-            skuId,
-            parentBatchHash,
-            merkleRoot,
-            timestamp,
-            metadataCID
-        );
+        emit SKUPackaged(skuId, parentBatchHash, merkleRoot, timestamp, metadataCID);
     }
 
     // ======================== STAGE 7: RETAIL / FRAUD REPORTING ========================
@@ -294,27 +223,13 @@ contract OilseedValueChain {
 
     // evidenceCID: IPFS CID for photos, lab reports, complaints, etc.
     event FraudDetected(
-        bytes32 indexed skuId,
-        address indexed reporter,
-        bytes32 evidenceHash,
-        uint64 timestamp,
-        string evidenceCID
+        bytes32 indexed skuId, address indexed reporter, bytes32 evidenceHash, uint64 timestamp, string evidenceCID
     );
 
-    function reportFraud(
-        bytes32 skuId,
-        bytes32 evidenceHash,
-        string calldata evidenceCID
-    ) external {
+    function reportFraud(bytes32 skuId, bytes32 evidenceHash, string calldata evidenceCID) external {
         if (packages[skuId].packagedAt == 0) revert SKUNotFound();
 
-        emit FraudDetected(
-            skuId,
-            msg.sender,
-            evidenceHash,
-            uint64(block.timestamp),
-            evidenceCID
-        );
+        emit FraudDetected(skuId, msg.sender, evidenceHash, uint64(block.timestamp), evidenceCID);
     }
 
     // ======================== STAGE 8: AI SCORING (COMMIT–REVEAL) ========================
@@ -334,32 +249,17 @@ contract OilseedValueChain {
     uint64 public constant MIN_REVEAL_DELAY = 1 hours;
     uint64 public constant MAX_REVEAL_DELAY = 24 hours;
 
-    event AIScoreCommitted(
-        bytes32 indexed batchHash,
-        bytes32 commitHash,
-        uint64 timestamp
-    );
+    event AIScoreCommitted(bytes32 indexed batchHash, bytes32 commitHash, uint64 timestamp);
 
     // metadataCID: IPFS CID for full scoring report / model explainability JSON
-    event AIScoreRevealed(
-        bytes32 indexed batchHash,
-        bytes32 revealHash,
-        uint64 timestamp,
-        string metadataCID
-    );
+    event AIScoreRevealed(bytes32 indexed batchHash, bytes32 revealHash, uint64 timestamp, string metadataCID);
 
     // Helper to compute the commit off-chain and on-chain consistently
-    function computeAIScoreCommit(
-        bytes32 revealHash,
-        bytes32 nonce
-    ) public pure returns (bytes32) {
+    function computeAIScoreCommit(bytes32 revealHash, bytes32 nonce) public pure returns (bytes32) {
         return keccak256(abi.encodePacked(revealHash, nonce));
     }
 
-    function commitAIScore(
-        bytes32 batchHash,
-        bytes32 commitHash
-    ) external onlyRole(ROLE_AI_ORACLE) {
+    function commitAIScore(bytes32 batchHash, bytes32 commitHash) external onlyRole(ROLE_AI_ORACLE) {
         if (aiScores[batchHash].committedAt != 0) revert AlreadyCommitted();
 
         uint64 timestamp = uint64(block.timestamp);
@@ -370,12 +270,10 @@ contract OilseedValueChain {
         emit AIScoreCommitted(batchHash, commitHash, timestamp);
     }
 
-    function revealAIScore(
-        bytes32 batchHash,
-        bytes32 revealHash,
-        bytes32 nonce,
-        string calldata metadataCID
-    ) external onlyRole(ROLE_AI_ORACLE) {
+    function revealAIScore(bytes32 batchHash, bytes32 revealHash, bytes32 nonce, string calldata metadataCID)
+        external
+        onlyRole(ROLE_AI_ORACLE)
+    {
         AIScore storage score = aiScores[batchHash];
 
         if (score.committedAt == 0) revert NotCommitted();
@@ -384,10 +282,12 @@ contract OilseedValueChain {
         uint64 timestamp = uint64(block.timestamp);
 
         // Enforce time-locked reveal period
-        if (timestamp < score.committedAt + MIN_REVEAL_DELAY)
+        if (timestamp < score.committedAt + MIN_REVEAL_DELAY) {
             revert RevealTooEarly();
-        if (timestamp > score.committedAt + MAX_REVEAL_DELAY)
+        }
+        if (timestamp > score.committedAt + MAX_REVEAL_DELAY) {
             revert RevealTooLate();
+        }
 
         // Verify commit matches reveal
         bytes32 expectedCommit = computeAIScoreCommit(revealHash, nonce);
@@ -402,28 +302,20 @@ contract OilseedValueChain {
     // ======================== BATCH OPERATIONS FOR GAS OPTIMIZATION ========================
     // Note: these keep the same minimal interface (no CIDs here to avoid heavy arrays of strings)
 
-    function batchUpdateWarehouse(
-        bytes32[] calldata warehouseIds,
-        bytes32[] calldata stateHashes
-    ) external onlyRole(ROLE_WAREHOUSE) {
+    function batchUpdateWarehouse(bytes32[] calldata warehouseIds, bytes32[] calldata stateHashes)
+        external
+        onlyRole(ROLE_WAREHOUSE)
+    {
         uint256 length = warehouseIds.length;
         if (length != stateHashes.length) revert LengthMismatch();
 
         uint64 timestamp = uint64(block.timestamp);
 
-        for (uint256 i = 0; i < length; ) {
-            warehouseStates[warehouseIds[i]] = WarehouseState({
-                stateHash: stateHashes[i],
-                lastUpdated: timestamp
-            });
+        for (uint256 i = 0; i < length;) {
+            warehouseStates[warehouseIds[i]] = WarehouseState({stateHash: stateHashes[i], lastUpdated: timestamp});
 
             // No CID in batch mode to avoid string arrays; off-chain can still correlate by timestamp
-            emit WarehouseStateUpdated(
-                warehouseIds[i],
-                stateHashes[i],
-                timestamp,
-                ""
-            );
+            emit WarehouseStateUpdated(warehouseIds[i], stateHashes[i], timestamp, "");
 
             unchecked {
                 ++i;
@@ -437,20 +329,12 @@ contract OilseedValueChain {
         bool[] calldata deliveryStatuses
     ) external onlyRole(ROLE_LOGISTICS) {
         uint256 length = shipmentIds.length;
-        if (
-            length != locationHashes.length || length != deliveryStatuses.length
-        ) revert LengthMismatch();
+        if (length != locationHashes.length || length != deliveryStatuses.length) revert LengthMismatch();
 
         uint64 timestamp = uint64(block.timestamp);
 
-        for (uint256 i = 0; i < length; ) {
-            emit LogisticsMilestone(
-                shipmentIds[i],
-                locationHashes[i],
-                timestamp,
-                deliveryStatuses[i],
-                ""
-            );
+        for (uint256 i = 0; i < length;) {
+            emit LogisticsMilestone(shipmentIds[i], locationHashes[i], timestamp, deliveryStatuses[i], "");
 
             unchecked {
                 ++i;
@@ -460,9 +344,7 @@ contract OilseedValueChain {
 
     // ======================== VERIFICATION / VIEW FUNCTIONS ========================
 
-    function verifyPackageOrigin(
-        bytes32 skuId
-    )
+    function verifyPackageOrigin(bytes32 skuId)
         external
         view
         returns (bytes32 parentBatchHash, bytes32 merkleRoot, uint64 packagedAt)
@@ -473,46 +355,26 @@ contract OilseedValueChain {
         return (pkg.parentBatchHash, pkg.merkleRoot, pkg.packagedAt);
     }
 
-    function verifyFarmer(
-        bytes32 farmerDID
-    )
+    function verifyFarmer(bytes32 farmerDID)
         external
         view
         returns (bool exists, bytes32 cropIDHash, uint64 registeredAt)
     {
         FarmerRecord memory farmer = farmers[farmerDID];
-        return (
-            farmer.registeredAt != 0,
-            farmer.cropIDHash,
-            farmer.registeredAt
-        );
+        return (farmer.registeredAt != 0, farmer.cropIDHash, farmer.registeredAt);
     }
 
-    function getWarehouseState(
-        bytes32 warehouseId
-    ) external view returns (bytes32 stateHash, uint64 lastUpdated) {
+    function getWarehouseState(bytes32 warehouseId) external view returns (bytes32 stateHash, uint64 lastUpdated) {
         WarehouseState memory state = warehouseStates[warehouseId];
         return (state.stateHash, state.lastUpdated);
     }
 
-    function getAIScore(
-        bytes32 batchHash
-    )
+    function getAIScore(bytes32 batchHash)
         external
         view
-        returns (
-            bytes32 commitHash,
-            bytes32 revealHash,
-            uint64 committedAt,
-            uint64 revealedAt
-        )
+        returns (bytes32 commitHash, bytes32 revealHash, uint64 committedAt, uint64 revealedAt)
     {
         AIScore memory score = aiScores[batchHash];
-        return (
-            score.commitHash,
-            score.revealHash,
-            score.committedAt,
-            score.revealedAt
-        );
+        return (score.commitHash, score.revealHash, score.committedAt, score.revealedAt);
     }
 }
