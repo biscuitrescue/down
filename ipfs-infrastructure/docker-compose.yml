@@ -1,0 +1,247 @@
+version: '3.8'
+
+services:
+  # Primary IPFS Node
+  ipfs-node:
+    image: ipfs/kubo:latest
+    container_name: ipfs-node
+    ports:
+      - "4001:4001"     # P2P port
+      - "5001:5001"     # API port
+      - "8080:8080"     # Gateway port
+    volumes:
+      - ipfs-data:/data/ipfs
+      - ./ipfs-config:/data/ipfs/config
+    environment:
+      - IPFS_PROFILE=server
+      - IPFS_PATH=/data/ipfs
+    command: |
+      sh -c "
+        ipfs init --profile=server &&
+        ipfs config --json Addresses.API '["/ip4/0.0.0.0/tcp/5001"]' &&
+        ipfs config --json Addresses.Gateway '["/ip4/0.0.0.0/tcp/8080"]' &&
+        ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin '[\"*\"]' &&
+        ipfs config --json API.HTTPHeaders.Access-Control-Allow-Methods '[\"GET\", \"POST\", \"PUT\", \"DELETE\"]' &&
+        ipfs config --json API.HTTPHeaders.Access-Control-Allow-Headers '[\"Authorization\", \"Content-Type\"]' &&
+        ipfs config --json Swarm.ConnMgr.HighWater 200 &&
+        ipfs config --json Swarm.ConnMgr.LowWater 100 &&
+        ipfs config --json Datastore.StorageMax '\"100GB\"' &&
+        ipfs daemon --migrate=true --enable-gc
+      "
+    restart: unless-stopped
+    networks:
+      - ipfs-network
+    healthcheck:
+      test: ["CMD-SHELL", "ipfs id || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # IPFS Cluster for redundancy
+  ipfs-cluster:
+    image: ipfs/ipfs-cluster:latest
+    container_name: ipfs-cluster
+    depends_on:
+      - ipfs-node
+    ports:
+      - "9094:9094"     # HTTP API
+      - "9095:9095"     # IPFS Proxy API
+      - "9096:9096"     # Cluster swarm port
+    volumes:
+      - cluster-data:/data/ipfs-cluster
+    environment:
+      - CLUSTER_PEERNAME=cluster-node-1
+      - CLUSTER_SECRET=your-32-byte-hex-secret-here
+      - CLUSTER_IPFSHTTP_NODEMULTIADDRESS=/dns4/ipfs-node/tcp/5001
+      - CLUSTER_CRDT_TRUSTEDPEERS=*
+      - CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS=/ip4/0.0.0.0/tcp/9094
+      - CLUSTER_IPFSPROXY_LISTENMULTIADDRESS=/ip4/0.0.0.0/tcp/9095
+      - CLUSTER_MONITORPINGINTERVAL=2s
+    command: |
+      sh -c "
+        ipfs-cluster-service init &&
+        ipfs-cluster-service daemon
+      "
+    restart: unless-stopped
+    networks:
+      - ipfs-network
+    healthcheck:
+      test: ["CMD-SHELL", "ipfs-cluster-ctl version || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # IPFS Gateway with Nginx caching
+  ipfs-gateway:
+    image: nginx:alpine
+    container_name: ipfs-gateway
+    depends_on:
+      - ipfs-node
+    ports:
+      - "8081:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx-cache:/var/cache/nginx
+    restart: unless-stopped
+    networks:
+      - ipfs-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: ipfs-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    networks:
+      - ipfs-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # PostgreSQL for metadata indexing
+  postgres:
+    image: postgres:15-alpine
+    container_name: ipfs-postgres
+    environment:
+      - POSTGRES_DB=ipfs_metadata
+      - POSTGRES_USER=ipfs_user
+      - POSTGRES_PASSWORD=secure_password_change_in_production
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    networks:
+      - ipfs-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ipfs_user -d ipfs_metadata"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring with Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ipfs-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - ipfs-network
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ipfs-grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin_change_in_production
+      - GF_USERS_ALLOW_SIGN_UP=false
+    restart: unless-stopped
+    networks:
+      - ipfs-network
+
+  # IPFS Pin Manager Service
+  pin-manager:
+    image: node:18-alpine
+    container_name: ipfs-pin-manager
+    depends_on:
+      - ipfs-node
+      - postgres
+      - redis
+    working_dir: /app
+    volumes:
+      - ./pin-manager:/app
+    environment:
+      - NODE_ENV=production
+      - IPFS_API_URL=http://ipfs-node:5001
+      - POSTGRES_URL=postgresql://ipfs_user:secure_password_change_in_production@postgres:5432/ipfs_metadata
+      - REDIS_URL=redis://redis:6379
+      - INFURA_PROJECT_ID=your_infura_project_id
+      - INFURA_PROJECT_SECRET=your_infura_secret
+      - PINATA_API_KEY=your_pinata_api_key
+      - PINATA_SECRET_KEY=your_pinata_secret
+    command: |
+      sh -c "
+        npm ci --only=production &&
+        node index.js
+      "
+    restart: unless-stopped
+    networks:
+      - ipfs-network
+
+  # Health Check Service
+  health-checker:
+    image: node:18-alpine
+    container_name: ipfs-health-checker
+    depends_on:
+      - ipfs-node
+      - ipfs-cluster
+    working_dir: /app
+    volumes:
+      - ./health-checker:/app
+    environment:
+      - IPFS_API_URL=http://ipfs-node:5001
+      - CLUSTER_API_URL=http://ipfs-cluster:9094
+      - CHECK_INTERVAL=60000
+      - SLACK_WEBHOOK_URL=your_slack_webhook_url
+    command: |
+      sh -c "
+        npm ci --only=production &&
+        node health-check.js
+      "
+    restart: unless-stopped
+    networks:
+      - ipfs-network
+
+networks:
+  ipfs-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  ipfs-data:
+    driver: local
+  cluster-data:
+    driver: local
+  nginx-cache:
+    driver: local
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local

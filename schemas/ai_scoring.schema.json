@@ -1,0 +1,309 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://oilseed.chain/schemas/ai_scoring/1.0.0",
+  "title": "AI Scoring Schema",
+  "description": "Schema for AI-generated quality and trust scores with full explainability and reproducibility metadata.",
+  "type": "object",
+  "required": ["scoring_id", "timestamp", "entity_id", "entity_type", "model", "inputs", "outputs"],
+  "properties": {
+    "scoring_id": {
+      "type": "string",
+      "description": "Unique scoring record identifier",
+      "pattern": "^SCORE-[A-Z0-9]{12,20}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of scoring"
+    },
+    "entity_id": {
+      "type": "string",
+      "description": "ID of the entity being scored (batch, SKU, etc.)"
+    },
+    "entity_type": {
+      "type": "string",
+      "enum": ["batch", "sku", "farmer", "warehouse", "shipment"],
+      "description": "Type of entity being scored"
+    },
+    "model": {
+      "type": "object",
+      "required": ["name", "version", "hash"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Model name/identifier"
+        },
+        "version": {
+          "type": "string",
+          "description": "Semantic version of the model",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "hash": {
+          "type": "string",
+          "description": "SHA256 hash of model weights + config",
+          "pattern": "^0x[a-fA-F0-9]{64}$"
+        },
+        "framework": {
+          "type": "string",
+          "enum": ["pytorch", "tensorflow", "onnx", "sklearn", "xgboost", "custom"],
+          "description": "ML framework used"
+        },
+        "training_date": {
+          "type": "string",
+          "format": "date",
+          "description": "Date model was trained"
+        },
+        "training_data_hash": {
+          "type": "string",
+          "description": "Hash of training dataset for reproducibility",
+          "pattern": "^0x[a-fA-F0-9]{64}$"
+        },
+        "weights_cid": {
+          "type": "string",
+          "description": "IPFS CID of model weights file"
+        },
+        "config_cid": {
+          "type": "string",
+          "description": "IPFS CID of model configuration"
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "required": ["data_references", "combined_hash"],
+      "properties": {
+        "data_references": {
+          "type": "object",
+          "description": "Map of input name to IPFS CID for each data source",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "combined_hash": {
+          "type": "string",
+          "description": "SHA256 hash of all input data combined",
+          "pattern": "^0x[a-fA-F0-9]{64}$"
+        },
+        "snapshot": {
+          "type": "object",
+          "description": "Optional snapshot of key input values for quick reference"
+        },
+        "schema_version": {
+          "type": "string",
+          "description": "Version of input schema used"
+        },
+        "farmer_data_cid": {
+          "type": "string",
+          "description": "IPFS CID of farmer registration data"
+        },
+        "warehouse_data_cid": {
+          "type": "string",
+          "description": "IPFS CID of warehouse storage data"
+        },
+        "processing_data_cid": {
+          "type": "string",
+          "description": "IPFS CID of processing data"
+        },
+        "lab_results_cid": {
+          "type": "string",
+          "description": "IPFS CID of laboratory test results"
+        },
+        "logistics_data_cid": {
+          "type": "string",
+          "description": "IPFS CID of logistics tracking data"
+        }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "required": ["quality_score", "trust_score"],
+      "properties": {
+        "quality_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Overall quality score (0-100)"
+        },
+        "trust_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Trust/reliability score (0-100)"
+        },
+        "fraud_risk_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Fraud risk score (0-100, higher = more risk)"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Model confidence in the scores (0-1)"
+        },
+        "grade": {
+          "type": "string",
+          "enum": ["A+", "A", "B+", "B", "C", "D", "F"],
+          "description": "Letter grade derived from scores"
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "AI-generated recommendations"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Warnings or concerns identified"
+        },
+        "output_hash": {
+          "type": "string",
+          "description": "SHA256 hash of all outputs for verification",
+          "pattern": "^0x[a-fA-F0-9]{64}$"
+        }
+      }
+    },
+    "explainability": {
+      "type": "object",
+      "properties": {
+        "factors": {
+          "type": "object",
+          "description": "Contribution of each factor to final score",
+          "properties": {
+            "storage_conditions": {
+              "type": "number",
+              "description": "Impact of storage conditions on score"
+            },
+            "processing_quality": {
+              "type": "number",
+              "description": "Impact of processing quality on score"
+            },
+            "source_verification": {
+              "type": "number",
+              "description": "Impact of source verification on score"
+            },
+            "lab_results": {
+              "type": "number",
+              "description": "Impact of lab results on score"
+            },
+            "logistics_integrity": {
+              "type": "number",
+              "description": "Impact of logistics handling on score"
+            },
+            "historical_performance": {
+              "type": "number",
+              "description": "Impact of historical track record on score"
+            }
+          }
+        },
+        "factor_details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Factor name"
+              },
+              "weight": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Weight of this factor in final score"
+              },
+              "value": {
+                "type": "number",
+                "description": "Raw value for this factor"
+              },
+              "contribution": {
+                "type": "number",
+                "description": "Contribution to final score"
+              },
+              "explanation": {
+                "type": "string",
+                "description": "Human-readable explanation"
+              }
+            }
+          }
+        },
+        "decision_path": {
+          "type": "string",
+          "description": "Human-readable explanation of scoring decision"
+        },
+        "feature_importance": {
+          "type": "object",
+          "description": "SHAP or similar feature importance values",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "reproducibility": {
+      "type": "object",
+      "properties": {
+        "random_seed": {
+          "type": "integer",
+          "description": "Random seed used for reproducibility"
+        },
+        "environment": {
+          "type": "object",
+          "properties": {
+            "python_version": { "type": "string" },
+            "framework_version": { "type": "string" },
+            "cuda_version": { "type": "string" }
+          }
+        },
+        "processing_time_ms": {
+          "type": "integer",
+          "description": "Time taken for scoring in milliseconds"
+        },
+        "can_reproduce": {
+          "type": "boolean",
+          "description": "Whether all data is available for reproduction"
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "properties": {
+        "scorer_id": {
+          "type": "string",
+          "description": "ID of the scoring service/node"
+        },
+        "signature": {
+          "type": "string",
+          "description": "Digital signature of the scoring record"
+        },
+        "commitment_hash": {
+          "type": "string",
+          "description": "Hash committed on-chain before reveal",
+          "pattern": "^0x[a-fA-F0-9]{64}$"
+        },
+        "revealed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the score was revealed on-chain"
+        },
+        "on_chain_tx": {
+          "type": "string",
+          "description": "Transaction hash of on-chain commitment"
+        }
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "schema_metadata": {
+      "name": "ai_scoring",
+      "version": "1.0.0",
+      "created_at": "2024-01-01T00:00:00Z",
+      "changelog": "Initial schema version with full explainability support"
+    }
+  }
+}

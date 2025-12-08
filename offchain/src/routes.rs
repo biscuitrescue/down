@@ -76,7 +76,15 @@ pub fn configure_routes(state: crate::state::AppState) -> Router {
             post(supply_chain_handlers::reveal_ai_score),
         )
         // ==================== IPFS ROUTES ====================
+        // Generic IPFS operations
         .route("/api/ipfs/upload", post(crate::ipfs::upload_to_ipfs))
+        .route("/api/ipfs/retrieve", post(crate::ipfs::retrieve_from_ipfs))
+        .route("/api/ipfs/health", post(crate::ipfs::ipfs_health))
+
+        // Supply chain specific IPFS uploads
+        .route("/api/ipfs/farmer", post(crate::ipfs::upload_farmer_metadata))
+        .route("/api/ipfs/fpo-purchase", post(crate::ipfs::upload_fpo_purchase_metadata))
+        .route("/api/ipfs/warehouse", post(crate::ipfs::upload_warehouse_metadata))
         // Add state to all routes
         .with_state(state)
 }

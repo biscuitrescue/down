@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://oilseed.chain/schemas/index",
+  "title": "Oilseed Supply Chain Schema Index",
+  "description": "Index of all schema definitions for the oilseed value chain tracking system",
+  "version": "1.0.0",
+  "updated_at": "2024-01-01T00:00:00Z",
+  "schemas": [
+    {
+      "name": "farmer_registration",
+      "version": "1.0.0",
+      "file": "farmer_registration.schema.json",
+      "description": "Farmer registration data including profile, land details, and crop information",
+      "stage": "farmer_registration",
+      "contains_pii": true,
+      "pii_fields": ["profile.name", "profile.phone", "profile.address", "profile.aadhaar_hash", "profile.bank_details"]
+    },
+    {
+      "name": "fpo_purchase",
+      "version": "1.0.0",
+      "file": "fpo_purchase.schema.json",
+      "description": "FPO purchase transaction data from farmers",
+      "stage": "fpo_purchase",
+      "contains_pii": false,
+      "pii_fields": []
+    },
+    {
+      "name": "warehouse_storage",
+      "version": "1.0.0",
+      "file": "warehouse_storage.schema.json",
+      "description": "Warehouse storage records including IoT sensor data",
+      "stage": "warehouse_storage",
+      "contains_pii": false,
+      "pii_fields": []
+    },
+    {
+      "name": "logistics",
+      "version": "1.0.0",
+      "file": "logistics.schema.json",
+      "description": "Logistics and transportation tracking data",
+      "stage": "logistics",
+      "contains_pii": true,
+      "pii_fields": ["driver.name", "driver.phone", "driver.license"]
+    },
+    {
+      "name": "processing",
+      "version": "1.0.0",
+      "file": "processing.schema.json",
+      "description": "Processing facility operations and output data",
+      "stage": "processing",
+      "contains_pii": false,
+      "pii_fields": []
+    },
+    {
+      "name": "packaging",
+      "version": "1.0.0",
+      "file": "packaging.schema.json",
+      "description": "Packaging and SKU creation data with QR codes",
+      "stage": "packaging",
+      "contains_pii": false,
+      "pii_fields": []
+    },
+    {
+      "name": "ai_scoring",
+      "version": "1.0.0",
+      "file": "ai_scoring.schema.json",
+      "description": "AI-generated quality and trust scores with explainability",
+      "stage": "ai_scoring",
+      "contains_pii": false,
+      "pii_fields": []
+    },
+    {
+      "name": "fraud_report",
+      "version": "1.0.0",
+      "file": "fraud_report.schema.json",
+      "description": "Fraud detection and reporting data",
+      "stage": "fraud_report",
+      "contains_pii": true,
+      "pii_fields": ["reporter.name", "reporter.contact"]
+    }
+  ],
+  "privacy_rules": {
+    "encryption_required": true,
+    "encryption_algorithm": "AES-256-GCM",
+    "pii_storage": "encrypted_only",
+    "pii_retention_days": 365,
+    "public_data_on_ipfs": true,
+    "private_data_on_ipfs": "encrypted_only"
+  },
+  "versioning_policy": {
+    "strategy": "semantic",
+    "backward_compatible": true,
+    "unknown_fields": "allow",
+    "deprecation_notice_days": 90
+  }
+}

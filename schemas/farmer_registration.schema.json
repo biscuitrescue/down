@@ -1,0 +1,173 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://oilseed.chain/schemas/farmer_registration/1.0.0",
+  "title": "Farmer Registration Schema",
+  "description": "Schema for farmer registration data in the oilseed supply chain. PII fields must be encrypted before storage.",
+  "type": "object",
+  "required": ["farmer_id", "registration_date", "land_details", "crop_info", "verification_status"],
+  "properties": {
+    "farmer_id": {
+      "type": "string",
+      "description": "Unique farmer identifier (non-PII, derived from DID)",
+      "pattern": "^FRM-[A-Z0-9]{8,16}$"
+    },
+    "registration_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 registration timestamp"
+    },
+    "profile_encrypted_cid": {
+      "type": "string",
+      "description": "IPFS CID of encrypted farmer profile (contains PII)",
+      "pattern": "^Qm[1-9A-HJ-NP-Za-km-z]{44}$|^bafy[a-z0-9]{50,}$"
+    },
+    "land_details": {
+      "type": "object",
+      "required": ["total_area_hectares", "soil_type", "geo_hash"],
+      "properties": {
+        "total_area_hectares": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 10000,
+          "description": "Total cultivable area in hectares"
+        },
+        "soil_type": {
+          "type": "string",
+          "enum": ["alluvial", "black", "red", "laterite", "desert", "mountain", "other"],
+          "description": "Soil classification"
+        },
+        "geo_hash": {
+          "type": "string",
+          "description": "Geohash of approximate location (not exact for privacy)",
+          "minLength": 4,
+          "maxLength": 8
+        },
+        "irrigation_type": {
+          "type": "string",
+          "enum": ["rainfed", "canal", "tubewell", "drip", "sprinkler", "mixed"],
+          "description": "Primary irrigation method"
+        },
+        "land_document_hashes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{64}$"
+          },
+          "description": "SHA256 hashes of land ownership documents (documents stored encrypted)"
+        }
+      }
+    },
+    "crop_info": {
+      "type": "object",
+      "required": ["variety", "planting_season", "expected_yield_kg"],
+      "properties": {
+        "variety": {
+          "type": "string",
+          "enum": ["mustard", "groundnut", "soybean", "sunflower", "sesame", "safflower", "linseed", "castor", "niger", "other"],
+          "description": "Oilseed crop variety"
+        },
+        "planting_season": {
+          "type": "string",
+          "enum": ["kharif", "rabi", "zaid"],
+          "description": "Planting season"
+        },
+        "planting_date": {
+          "type": "string",
+          "format": "date",
+          "description": "Actual or planned planting date"
+        },
+        "expected_yield_kg": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Expected yield in kilograms"
+        },
+        "seed_variety_code": {
+          "type": "string",
+          "description": "Certified seed variety code if applicable"
+        },
+        "organic_certified": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether organic certification is claimed"
+        }
+      }
+    },
+    "verification_status": {
+      "type": "object",
+      "required": ["status", "verified_at"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "verified", "rejected", "suspended"],
+          "description": "Current verification status"
+        },
+        "verified_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last verification update"
+        },
+        "verifier_id": {
+          "type": "string",
+          "description": "ID of the verifying entity"
+        },
+        "verification_method": {
+          "type": "string",
+          "enum": ["physical_visit", "video_kyc", "document_review", "satellite_verification"],
+          "description": "Method used for verification"
+        },
+        "certifications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string" },
+              "issuer": { "type": "string" },
+              "valid_until": { "type": "string", "format": "date" },
+              "certificate_hash": { "type": "string", "pattern": "^0x[a-fA-F0-9]{64}$" }
+            }
+          },
+          "description": "List of certifications (organic, etc.)"
+        }
+      }
+    },
+    "satellite_data": {
+      "type": "object",
+      "properties": {
+        "imagery_cid": {
+          "type": "string",
+          "description": "IPFS CID of satellite imagery analysis"
+        },
+        "ndvi_score": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1,
+          "description": "Normalized Difference Vegetation Index"
+        },
+        "capture_date": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "description": "Optional satellite verification data"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "pii_fields": {
+      "description": "Fields that contain PII and must be encrypted",
+      "fields": [
+        "profile.name",
+        "profile.phone",
+        "profile.address",
+        "profile.aadhaar_hash",
+        "profile.bank_details"
+      ]
+    },
+    "schema_metadata": {
+      "name": "farmer_registration",
+      "version": "1.0.0",
+      "created_at": "2024-01-01T00:00:00Z",
+      "changelog": "Initial schema version"
+    }
+  }
+}
