@@ -372,7 +372,7 @@ impl SupplyChainWorkflow {
         let receipt = self
             .state
             .chain_client
-            .register_farmer(farmer_did, crop_id_hash)
+            .register_farmer(farmer_did, crop_id_hash, cid.clone())
             .await
             .context("Blockchain registration failed")?;
 
@@ -411,7 +411,7 @@ impl SupplyChainWorkflow {
         let receipt = self
             .state
             .chain_client
-            .fpo_purchase(batch_hash, farmer_did)
+            .fpo_purchase(batch_hash, farmer_did, cid.clone())
             .await
             .context("Blockchain FPO purchase failed")?;
 
@@ -446,7 +446,7 @@ impl SupplyChainWorkflow {
         let receipt = self
             .state
             .chain_client
-            .update_warehouse_state(warehouse_id, state_hash)
+            .update_warehouse_state(warehouse_id, state_hash, cid.clone())
             .await
             .context("Blockchain warehouse update failed")?;
 
@@ -493,7 +493,7 @@ impl SupplyChainWorkflow {
             let receipt = self
                 .state
                 .chain_client
-                .record_logistics(shipment_id, location_hash, is_delivered)
+                .record_logistics(shipment_id, location_hash, is_delivered, cid.clone())
                 .await
                 .context("Blockchain logistics record failed")?;
 
@@ -541,7 +541,12 @@ impl SupplyChainWorkflow {
         let receipt = self
             .state
             .chain_client
-            .process_batch(input_hash, transform_hash, output_hashes.clone())
+            .process_batch(
+                input_hash,
+                transform_hash,
+                output_hashes.clone(),
+                cid.clone(),
+            )
             .await
             .context("Blockchain processing failed")?;
 
@@ -610,7 +615,7 @@ impl SupplyChainWorkflow {
             let receipt = self
                 .state
                 .chain_client
-                .create_sku(sku_hash, parent_hash, merkle_root)
+                .create_sku(sku_hash, parent_hash, merkle_root, cid.clone())
                 .await
                 .context("Blockchain SKU creation failed")?;
 
@@ -672,7 +677,7 @@ impl SupplyChainWorkflow {
         let reveal_receipt = self
             .state
             .chain_client
-            .reveal_ai_score(batch_hash, reveal_hash, nonce)
+            .reveal_ai_score(batch_hash, reveal_hash, nonce, cid.clone())
             .await
             .context("Blockchain AI reveal failed")?;
 

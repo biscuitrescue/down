@@ -4,8 +4,6 @@ use alloy::primitives::FixedBytes;
 use axum::{extract::State, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 
-// ======================== COMMON TYPES ========================
-
 #[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     pub error: String,
@@ -75,7 +73,7 @@ pub async fn register_farmer(
     // 4. Register on blockchain
     let receipt = state
         .chain_client
-        .register_farmer(farmer_did, crop_id_hash)
+        .register_farmer(farmer_did, crop_id_hash, metadata_cid.clone())
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Blockchain registration failed");
@@ -155,7 +153,7 @@ pub async fn fpo_purchase(
     // 3. Record on blockchain
     let receipt = state
         .chain_client
-        .fpo_purchase(batch_hash, farmer_did)
+        .fpo_purchase(batch_hash, farmer_did, metadata_cid.clone())
         .await
         .map_err(|e| {
             (
@@ -230,7 +228,7 @@ pub async fn update_warehouse_state(
     // 4. Update on blockchain
     let receipt = state
         .chain_client
-        .update_warehouse_state(warehouse_id, state_hash)
+        .update_warehouse_state(warehouse_id, state_hash, metadata_cid.clone())
         .await
         .map_err(|e| {
             (
@@ -354,7 +352,12 @@ pub async fn record_logistics(
     // 3. Record on blockchain
     let receipt = state
         .chain_client
-        .record_logistics(shipment_id, location_hash, payload.is_delivered)
+        .record_logistics(
+            shipment_id,
+            location_hash,
+            payload.is_delivered,
+            metadata_cid.clone(),
+        )
         .await
         .map_err(|e| {
             (
@@ -441,6 +444,7 @@ pub async fn process_batch(
             input_batch_hash,
             transform_hash,
             output_batch_hashes.clone(),
+            metadata_cid.clone(),
         )
         .await
         .map_err(|e| {
@@ -525,7 +529,7 @@ pub async fn create_sku(
     // 4. Record on blockchain
     let receipt = state
         .chain_client
-        .create_sku(sku_id, parent_batch_hash, merkle_root)
+        .create_sku(sku_id, parent_batch_hash, merkle_root, metadata_cid.clone())
         .await
         .map_err(|e| {
             (
@@ -602,7 +606,7 @@ pub async fn report_fraud(
     // 4. Report on blockchain
     let receipt = state
         .chain_client
-        .report_fraud(sku_id, evidence_hash)
+        .report_fraud(sku_id, evidence_hash, evidence_cid.clone())
         .await
         .map_err(|e| {
             (
@@ -750,7 +754,7 @@ pub async fn reveal_ai_score(
     // 4. Reveal on blockchain
     let receipt = state
         .chain_client
-        .reveal_ai_score(batch_hash, reveal_hash, nonce)
+        .reveal_ai_score(batch_hash, reveal_hash, nonce, metadata_cid.clone())
         .await
         .map_err(|e| {
             (

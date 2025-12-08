@@ -33,16 +33,18 @@ type AppProvider = alloy::providers::fillers::FillProvider<
     alloy::network::Ethereum,
 >;
 
+// Contract definition matching nyx.sol
 sol! {
     #[sol(rpc)]
     contract OilseedValueChain {
-        event RoleGranted(address indexed account, uint8 role);
-        event RoleRevoked(address indexed account, uint8 role);
+        event RoleGranted(address indexed account, uint256 role);
+        event RoleRevoked(address indexed account, uint256 role);
 
         event FarmerRegistered(
             bytes32 indexed farmerDID,
             bytes32 indexed cropIDHash,
-            uint64 timestamp
+            uint64 timestamp,
+            string metadataCID
         );
 
         event OwnershipTransfer(
@@ -50,41 +52,47 @@ sol! {
             bytes32 indexed fromDID,
             address indexed toAddress,
             uint64 timestamp,
-            uint8 transferType
+            uint8 transferType,
+            string metadataCID
         );
 
         event WarehouseStateUpdated(
             bytes32 indexed warehouseId,
             bytes32 stateHash,
-            uint64 timestamp
+            uint64 timestamp,
+            string metadataCID
         );
 
         event LogisticsMilestone(
             bytes32 indexed shipmentId,
             bytes32 locationHash,
             uint64 timestamp,
-            bool isDelivered
+            bool isDelivered,
+            string metadataCID
         );
 
         event BatchProcessed(
             bytes32 indexed inputBatchHash,
             bytes32 transformHash,
             bytes32[] outputBatchHashes,
-            uint64 timestamp
+            uint64 timestamp,
+            string metadataCID
         );
 
         event SKUPackaged(
             bytes32 indexed skuId,
             bytes32 indexed parentBatchHash,
             bytes32 merkleRoot,
-            uint64 timestamp
+            uint64 timestamp,
+            string metadataCID
         );
 
         event FraudDetected(
             bytes32 indexed skuId,
             address indexed reporter,
             bytes32 evidenceHash,
-            uint64 timestamp
+            uint64 timestamp,
+            string evidenceCID
         );
 
         event AIScoreCommitted(
@@ -96,7 +104,8 @@ sol! {
         event AIScoreRevealed(
             bytes32 indexed batchHash,
             bytes32 revealHash,
-            uint64 timestamp
+            uint64 timestamp,
+            string metadataCID
         );
 
         struct FarmerRecord {
@@ -122,43 +131,45 @@ sol! {
             uint64 revealedAt;
         }
 
-        function grantRole(address account, uint8 role) external;
-        function revokeRole(address account, uint8 role) external;
-        function hasRole(address account, uint8 role) external view returns (bool);
-        function getRoles(address account) external view returns (uint8);
+        function grantRole(address account, uint256 role) external;
+        function revokeRole(address account, uint256 role) external;
+        function hasRole(address account, uint256 role) external view returns (bool);
+        function getRoles(address account) external view returns (uint256);
 
         // Stage 1: Farmer Registration
-        function registerFarmer(bytes32 farmerDID, bytes32 cropIDHash) external;
+        function registerFarmer(bytes32 farmerDID, bytes32 cropIDHash, string calldata metadataCID) external;
         function farmers(bytes32 farmerDID) external view returns (FarmerRecord memory);
 
         // Stage 2: FPO Verification
-        function fpoPurchase(bytes32 batchHash, bytes32 farmerDID) external;
+        function fpoPurchase(bytes32 batchHash, bytes32 farmerDID, string calldata metadataCID) external;
 
         // Stage 3: Warehouse Storage
-        function updateWarehouseState(bytes32 warehouseId, bytes32 stateHash) external;
+        function updateWarehouseState(bytes32 warehouseId, bytes32 stateHash, string calldata metadataCID) external;
         function warehouseStates(bytes32 warehouseId) external view returns (WarehouseState memory);
 
         // Stage 4: Logistics
-        function recordLogistics(bytes32 shipmentId, bytes32 locationHash, bool isDelivered) external;
+        function recordLogistics(bytes32 shipmentId, bytes32 locationHash, bool isDelivered, string calldata metadataCID) external;
 
         // Stage 5: Processing
         function processBatch(
             bytes32 inputBatchHash,
             bytes32 transformHash,
-            bytes32[] calldata outputBatchHashes
+            bytes32[] calldata outputBatchHashes,
+            string calldata metadataCID
         ) external;
 
         // Stage 6: Packaging
-        function createSKU(bytes32 skuId, bytes32 parentBatchHash, bytes32 merkleRoot) external;
+        function createSKU(bytes32 skuId, bytes32 parentBatchHash, bytes32 merkleRoot, string calldata metadataCID) external;
         function packages(bytes32 skuId) external view returns (PackageRecord memory);
 
         // Stage 7: Retail / Fraud Detection
-        function reportFraud(bytes32 skuId, bytes32 evidenceHash) external;
+        function reportFraud(bytes32 skuId, bytes32 evidenceHash, string calldata evidenceCID) external;
 
         // Stage 8: AI Scoring
         function commitAIScore(bytes32 batchHash, bytes32 commitHash) external;
-        function revealAIScore(bytes32 batchHash, bytes32 revealHash, bytes32 nonce) external;
+        function revealAIScore(bytes32 batchHash, bytes32 revealHash, bytes32 nonce, string calldata metadataCID) external;
         function aiScores(bytes32 batchHash) external view returns (AIScore memory);
+        function computeAIScoreCommit(bytes32 revealHash, bytes32 nonce) external pure returns (bytes32);
 
         // Batch Operations
         function batchUpdateWarehouse(
@@ -187,7 +198,6 @@ sol! {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct ChainConfig {
     pub rpc_url: String,
     pub private_key: String,
@@ -266,12 +276,13 @@ impl ChainClient {
         &self,
         farmer_did: FixedBytes<32>,
         crop_id_hash: FixedBytes<32>,
+        metadata_cid: String,
     ) -> Result<TransactionReceipt> {
-        tracing::info!(?farmer_did, ?crop_id_hash, "Registering farmer");
+        tracing::info!(?farmer_did, ?crop_id_hash, cid = %metadata_cid, "Registering farmer");
 
         let tx = self
             .contract
-            .registerFarmer(farmer_did, crop_id_hash)
+            .registerFarmer(farmer_did, crop_id_hash, metadata_cid)
             .send()
             .await
             .context("Failed to send registerFarmer transaction")?;
@@ -307,12 +318,13 @@ impl ChainClient {
         &self,
         batch_hash: FixedBytes<32>,
         farmer_did: FixedBytes<32>,
+        metadata_cid: String,
     ) -> Result<TransactionReceipt> {
-        tracing::info!(?batch_hash, ?farmer_did, "Recording FPO purchase");
+        tracing::info!(?batch_hash, ?farmer_did, cid = %metadata_cid, "Recording FPO purchase");
 
         let tx = self
             .contract
-            .fpoPurchase(batch_hash, farmer_did)
+            .fpoPurchase(batch_hash, farmer_did, metadata_cid)
             .send()
             .await
             .context("Failed to send fpoPurchase transaction")?;
@@ -334,12 +346,13 @@ impl ChainClient {
         &self,
         warehouse_id: FixedBytes<32>,
         state_hash: FixedBytes<32>,
+        metadata_cid: String,
     ) -> Result<TransactionReceipt> {
-        tracing::info!(?warehouse_id, ?state_hash, "Updating warehouse state");
+        tracing::info!(?warehouse_id, ?state_hash, cid = %metadata_cid, "Updating warehouse state");
 
         let tx = self
             .contract
-            .updateWarehouseState(warehouse_id, state_hash)
+            .updateWarehouseState(warehouse_id, state_hash, metadata_cid)
             .send()
             .await
             .context("Failed to send updateWarehouseState transaction")?;
@@ -392,17 +405,19 @@ impl ChainClient {
         shipment_id: FixedBytes<32>,
         location_hash: FixedBytes<32>,
         is_delivered: bool,
+        metadata_cid: String,
     ) -> Result<TransactionReceipt> {
         tracing::info!(
             ?shipment_id,
             ?location_hash,
             is_delivered,
+            cid = %metadata_cid,
             "Recording logistics milestone"
         );
 
         let tx = self
             .contract
-            .recordLogistics(shipment_id, location_hash, is_delivered)
+            .recordLogistics(shipment_id, location_hash, is_delivered, metadata_cid)
             .send()
             .await
             .context("Failed to send recordLogistics transaction")?;
@@ -425,17 +440,24 @@ impl ChainClient {
         input_batch_hash: FixedBytes<32>,
         transform_hash: FixedBytes<32>,
         output_batch_hashes: Vec<FixedBytes<32>>,
+        metadata_cid: String,
     ) -> Result<TransactionReceipt> {
         tracing::info!(
             ?input_batch_hash,
             ?transform_hash,
             output_count = output_batch_hashes.len(),
+            cid = %metadata_cid,
             "Processing batch"
         );
 
         let tx = self
             .contract
-            .processBatch(input_batch_hash, transform_hash, output_batch_hashes)
+            .processBatch(
+                input_batch_hash,
+                transform_hash,
+                output_batch_hashes,
+                metadata_cid,
+            )
             .send()
             .await
             .context("Failed to send processBatch transaction")?;
@@ -458,12 +480,13 @@ impl ChainClient {
         sku_id: FixedBytes<32>,
         parent_batch_hash: FixedBytes<32>,
         merkle_root: FixedBytes<32>,
+        metadata_cid: String,
     ) -> Result<TransactionReceipt> {
-        tracing::info!(?sku_id, ?parent_batch_hash, ?merkle_root, "Creating SKU");
+        tracing::info!(?sku_id, ?parent_batch_hash, ?merkle_root, cid = %metadata_cid, "Creating SKU");
 
         let tx = self
             .contract
-            .createSKU(sku_id, parent_batch_hash, merkle_root)
+            .createSKU(sku_id, parent_batch_hash, merkle_root, metadata_cid)
             .send()
             .await
             .context("Failed to send createSKU transaction")?;
@@ -499,12 +522,13 @@ impl ChainClient {
         &self,
         sku_id: FixedBytes<32>,
         evidence_hash: FixedBytes<32>,
+        evidence_cid: String,
     ) -> Result<TransactionReceipt> {
-        tracing::info!(?sku_id, ?evidence_hash, "Reporting fraud");
+        tracing::info!(?sku_id, ?evidence_hash, cid = %evidence_cid, "Reporting fraud");
 
         let tx = self
             .contract
-            .reportFraud(sku_id, evidence_hash)
+            .reportFraud(sku_id, evidence_hash, evidence_cid)
             .send()
             .await
             .context("Failed to send reportFraud transaction")?;
@@ -554,12 +578,13 @@ impl ChainClient {
         batch_hash: FixedBytes<32>,
         reveal_hash: FixedBytes<32>,
         nonce: FixedBytes<32>,
+        metadata_cid: String,
     ) -> Result<TransactionReceipt> {
-        tracing::info!(?batch_hash, ?reveal_hash, "Revealing AI score");
+        tracing::info!(?batch_hash, ?reveal_hash, cid = %metadata_cid, "Revealing AI score");
 
         let tx = self
             .contract
-            .revealAIScore(batch_hash, reveal_hash, nonce)
+            .revealAIScore(batch_hash, reveal_hash, nonce, metadata_cid)
             .send()
             .await
             .context("Failed to send revealAIScore transaction")?;
