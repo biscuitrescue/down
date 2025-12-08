@@ -88,12 +88,14 @@ contract OilseedValueChain {
         bytes32 indexed farmerDID,
         bytes32 indexed cropIDHash,
         uint64 timestamp,
+        bytes32 metadataHash, 
         string metadataCID
     );
 
     function registerFarmer(
         bytes32 farmerDID,
         bytes32 cropIDHash,
+        bytes32 metadataHash, 
         string calldata metadataCID
     ) external onlyRole(ROLE_FPO) {
         if (farmers[farmerDID].registeredAt != 0) revert AlreadyRegistered();
