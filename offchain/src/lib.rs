@@ -1,5 +1,6 @@
 pub mod chain;
 pub mod config;
+pub mod error;
 pub mod ipfs;
 pub mod routes;
 pub mod state;

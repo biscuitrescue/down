@@ -1,18 +1,23 @@
 use crate::chain::{hash_bytes, hash_string};
+use crate::error::{format_hash, format_tx_hash, ipfs_gateway_url, ApiError, ApiResult};
 use crate::state::AppState;
 use alloy::primitives::FixedBytes;
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
-pub struct ErrorResponse {
-    pub error: String,
-}
+// ======================== SHARED RESPONSE STRUCTS ========================
 
 #[derive(Debug, Serialize)]
 pub struct TxResponse {
     pub tx_hash: String,
     pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TxWithCidResponse {
+    pub tx_hash: String,
+    pub metadata_cid: String,
+    pub ipfs_url: String,
 }
 
 // ======================== STAGE 1: FARMER REGISTRATION ========================
@@ -21,7 +26,7 @@ pub struct TxResponse {
 pub struct RegisterFarmerRequest {
     pub farmer_did: String,
     pub crop_id: String,
-    pub metadata: serde_json::Value, // Full farmer profile, land docs, etc.
+    pub metadata: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -36,69 +41,34 @@ pub struct RegisterFarmerResponse {
 pub async fn register_farmer(
     State(state): State<AppState>,
     Json(payload): Json<RegisterFarmerRequest>,
-) -> Result<Json<RegisterFarmerResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> ApiResult<RegisterFarmerResponse> {
     tracing::info!(farmer_did = %payload.farmer_did, "Registering farmer");
 
-    // 1. Upload metadata to IPFS
     let metadata_cid = state
         .ipfs_client
         .upload_json(&payload.metadata)
         .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to upload farmer metadata to IPFS");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("IPFS upload failed: {}", e),
-                }),
-            )
-        })?;
+        .map_err(ApiError::ipfs_upload_failed)?;
 
-    tracing::info!(cid = %metadata_cid, "Farmer metadata uploaded to IPFS");
+    let farmer_did: FixedBytes<32> = payload
+        .farmer_did
+        .parse()
+        .map_err(|e| ApiError::invalid_did(e))?;
 
-    // 2. Parse farmer DID
-    let farmer_did: FixedBytes<32> = payload.farmer_did.parse().map_err(|e| {
-        tracing::error!(error = ?e, "Invalid farmer DID format");
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: format!("Invalid farmer DID: {}", e),
-            }),
-        )
-    })?;
-
-    // 3. Hash the crop ID
     let crop_id_hash = hash_string(&payload.crop_id);
 
-    // 4. Register on blockchain
     let receipt = state
         .chain_client
         .register_farmer(farmer_did, crop_id_hash, metadata_cid.clone())
         .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Blockchain registration failed");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Blockchain transaction failed: {}", e),
-                }),
-            )
-        })?;
-
-    let ipfs_url = format!("https://ipfs.io/ipfs/{}", metadata_cid);
-
-    tracing::info!(
-        tx_hash = ?receipt.transaction_hash,
-        metadata_cid = %metadata_cid,
-        "Farmer registered successfully"
-    );
+        .map_err(ApiError::blockchain_failed)?;
 
     Ok(Json(RegisterFarmerResponse {
-        tx_hash: format!("{:?}", receipt.transaction_hash),
+        tx_hash: format_tx_hash(receipt.transaction_hash),
         farmer_did: payload.farmer_did,
-        crop_id_hash: format!("{:?}", crop_id_hash),
-        metadata_cid,
-        ipfs_url,
+        crop_id_hash: format_hash(crop_id_hash),
+        metadata_cid: metadata_cid.clone(),
+        ipfs_url: ipfs_gateway_url(&metadata_cid),
     }))
 }
 
@@ -108,7 +78,7 @@ pub async fn register_farmer(
 pub struct FpoPurchaseRequest {
     pub batch_id: String,
     pub farmer_did: String,
-    pub metadata: serde_json::Value, // Quality reports, weight slips, photos
+    pub metadata: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -122,55 +92,32 @@ pub struct FpoPurchaseResponse {
 pub async fn fpo_purchase(
     State(state): State<AppState>,
     Json(payload): Json<FpoPurchaseRequest>,
-) -> Result<Json<FpoPurchaseResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> ApiResult<FpoPurchaseResponse> {
     tracing::info!(batch_id = %payload.batch_id, "Recording FPO purchase");
 
-    // 1. Upload metadata to IPFS
     let metadata_cid = state
         .ipfs_client
         .upload_json(&payload.metadata)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("IPFS upload failed: {}", e),
-                }),
-            )
-        })?;
+        .map_err(ApiError::ipfs_upload_failed)?;
 
-    // 2. Parse IDs
     let batch_hash = hash_string(&payload.batch_id);
-    let farmer_did: FixedBytes<32> = payload.farmer_did.parse().map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: format!("Invalid farmer DID: {}", e),
-            }),
-        )
-    })?;
+    let farmer_did: FixedBytes<32> = payload
+        .farmer_did
+        .parse()
+        .map_err(|e| ApiError::invalid_did(e))?;
 
-    // 3. Record on blockchain
     let receipt = state
         .chain_client
         .fpo_purchase(batch_hash, farmer_did, metadata_cid.clone())
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Blockchain transaction failed: {}", e),
-                }),
-            )
-        })?;
-
-    let ipfs_url = format!("https://ipfs.io/ipfs/{}", metadata_cid);
+        .map_err(ApiError::blockchain_failed)?;
 
     Ok(Json(FpoPurchaseResponse {
-        tx_hash: format!("{:?}", receipt.transaction_hash),
-        batch_hash: format!("{:?}", batch_hash),
-        metadata_cid,
-        ipfs_url,
+        tx_hash: format_tx_hash(receipt.transaction_hash),
+        batch_hash: format_hash(batch_hash),
+        metadata_cid: metadata_cid.clone(),
+        ipfs_url: ipfs_gateway_url(&metadata_cid),
     }))
 }
 
@@ -179,7 +126,7 @@ pub async fn fpo_purchase(
 #[derive(Debug, Deserialize)]
 pub struct WarehouseUpdateRequest {
     pub warehouse_id: String,
-    pub iot_data: serde_json::Value, // Temperature, humidity, etc.
+    pub iot_data: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -194,59 +141,31 @@ pub struct WarehouseUpdateResponse {
 pub async fn update_warehouse_state(
     State(state): State<AppState>,
     Json(payload): Json<WarehouseUpdateRequest>,
-) -> Result<Json<WarehouseUpdateResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> ApiResult<WarehouseUpdateResponse> {
     tracing::info!(warehouse_id = %payload.warehouse_id, "Updating warehouse state");
 
-    // 1. Upload IoT data to IPFS
     let metadata_cid = state
         .ipfs_client
         .upload_json(&payload.iot_data)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("IPFS upload failed: {}", e),
-                }),
-            )
-        })?;
+        .map_err(ApiError::ipfs_upload_failed)?;
 
-    // 2. Hash the IoT data for on-chain storage
-    let iot_json = serde_json::to_vec(&payload.iot_data).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("JSON serialization failed: {}", e),
-            }),
-        )
-    })?;
+    let iot_json = serde_json::to_vec(&payload.iot_data).map_err(ApiError::json_failed)?;
     let state_hash = hash_bytes(&iot_json);
-
-    // 3. Parse warehouse ID
     let warehouse_id = hash_string(&payload.warehouse_id);
 
-    // 4. Update on blockchain
     let receipt = state
         .chain_client
         .update_warehouse_state(warehouse_id, state_hash, metadata_cid.clone())
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Blockchain transaction failed: {}", e),
-                }),
-            )
-        })?;
-
-    let ipfs_url = format!("https://ipfs.io/ipfs/{}", metadata_cid);
+        .map_err(ApiError::blockchain_failed)?;
 
     Ok(Json(WarehouseUpdateResponse {
-        tx_hash: format!("{:?}", receipt.transaction_hash),
+        tx_hash: format_tx_hash(receipt.transaction_hash),
         warehouse_id: payload.warehouse_id,
-        state_hash: format!("{:?}", state_hash),
-        metadata_cid,
-        ipfs_url,
+        state_hash: format_hash(state_hash),
+        metadata_cid: metadata_cid.clone(),
+        ipfs_url: ipfs_gateway_url(&metadata_cid),
     }))
 }
 
@@ -265,24 +184,16 @@ pub struct BatchWarehouseUpdateRequest {
 pub async fn batch_update_warehouse(
     State(state): State<AppState>,
     Json(payload): Json<BatchWarehouseUpdateRequest>,
-) -> Result<Json<TxResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> ApiResult<TxResponse> {
     tracing::info!(count = payload.updates.len(), "Batch updating warehouses");
 
-    let mut warehouse_ids = Vec::new();
-    let mut state_hashes = Vec::new();
+    let mut warehouse_ids = Vec::with_capacity(payload.updates.len());
+    let mut state_hashes = Vec::with_capacity(payload.updates.len());
 
     for update in &payload.updates {
         let warehouse_id = hash_string(&update.warehouse_id);
-        let iot_json = serde_json::to_vec(&update.iot_data).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("JSON serialization failed: {}", e),
-                }),
-            )
-        })?;
+        let iot_json = serde_json::to_vec(&update.iot_data).map_err(ApiError::json_failed)?;
         let state_hash = hash_bytes(&iot_json);
-
         warehouse_ids.push(warehouse_id);
         state_hashes.push(state_hash);
     }
@@ -291,17 +202,10 @@ pub async fn batch_update_warehouse(
         .chain_client
         .batch_update_warehouse(warehouse_ids, state_hashes)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Blockchain transaction failed: {}", e),
-                }),
-            )
-        })?;
+        .map_err(ApiError::blockchain_failed)?;
 
     Ok(Json(TxResponse {
-        tx_hash: format!("{:?}", receipt.transaction_hash),
+        tx_hash: format_tx_hash(receipt.transaction_hash),
         message: format!("Successfully updated {} warehouses", payload.updates.len()),
     }))
 }
@@ -313,7 +217,7 @@ pub struct LogisticsUpdateRequest {
     pub shipment_id: String,
     pub location: String,
     pub is_delivered: bool,
-    pub gps_data: serde_json::Value, // GPS trace, photos, signatures
+    pub gps_data: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -328,28 +232,18 @@ pub struct LogisticsUpdateResponse {
 pub async fn record_logistics(
     State(state): State<AppState>,
     Json(payload): Json<LogisticsUpdateRequest>,
-) -> Result<Json<LogisticsUpdateResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> ApiResult<LogisticsUpdateResponse> {
     tracing::info!(shipment_id = %payload.shipment_id, "Recording logistics milestone");
 
-    // 1. Upload GPS data to IPFS
     let metadata_cid = state
         .ipfs_client
         .upload_json(&payload.gps_data)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("IPFS upload failed: {}", e),
-                }),
-            )
-        })?;
+        .map_err(ApiError::ipfs_upload_failed)?;
 
-    // 2. Hash location
     let shipment_id = hash_string(&payload.shipment_id);
     let location_hash = hash_string(&payload.location);
 
-    // 3. Record on blockchain
     let receipt = state
         .chain_client
         .record_logistics(
@@ -359,23 +253,14 @@ pub async fn record_logistics(
             metadata_cid.clone(),
         )
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Blockchain transaction failed: {}", e),
-                }),
-            )
-        })?;
-
-    let ipfs_url = format!("https://ipfs.io/ipfs/{}", metadata_cid);
+        .map_err(ApiError::blockchain_failed)?;
 
     Ok(Json(LogisticsUpdateResponse {
-        tx_hash: format!("{:?}", receipt.transaction_hash),
+        tx_hash: format_tx_hash(receipt.transaction_hash),
         shipment_id: payload.shipment_id,
-        location_hash: format!("{:?}", location_hash),
-        metadata_cid,
-        ipfs_url,
+        location_hash: format_hash(location_hash),
+        metadata_cid: metadata_cid.clone(),
+        ipfs_url: ipfs_gateway_url(&metadata_cid),
     }))
 }
 
@@ -385,7 +270,7 @@ pub async fn record_logistics(
 pub struct ProcessBatchRequest {
     pub input_batch_id: String,
     pub output_batch_ids: Vec<String>,
-    pub process_metadata: serde_json::Value, // Yield %, lab results, etc.
+    pub process_metadata: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -401,24 +286,15 @@ pub struct ProcessBatchResponse {
 pub async fn process_batch(
     State(state): State<AppState>,
     Json(payload): Json<ProcessBatchRequest>,
-) -> Result<Json<ProcessBatchResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> ApiResult<ProcessBatchResponse> {
     tracing::info!(input_batch = %payload.input_batch_id, "Processing batch");
 
-    // 1. Upload process metadata to IPFS
     let metadata_cid = state
         .ipfs_client
         .upload_json(&payload.process_metadata)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("IPFS upload failed: {}", e),
-                }),
-            )
-        })?;
+        .map_err(ApiError::ipfs_upload_failed)?;
 
-    // 2. Hash batch IDs
     let input_batch_hash = hash_string(&payload.input_batch_id);
     let output_batch_hashes: Vec<FixedBytes<32>> = payload
         .output_batch_ids
@@ -426,18 +302,10 @@ pub async fn process_batch(
         .map(|id| hash_string(id))
         .collect();
 
-    // 3. Create transform hash from metadata
-    let metadata_json = serde_json::to_vec(&payload.process_metadata).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("JSON serialization failed: {}", e),
-            }),
-        )
-    })?;
+    let metadata_json =
+        serde_json::to_vec(&payload.process_metadata).map_err(ApiError::json_failed)?;
     let transform_hash = hash_bytes(&metadata_json);
 
-    // 4. Record on blockchain
     let receipt = state
         .chain_client
         .process_batch(
@@ -447,27 +315,15 @@ pub async fn process_batch(
             metadata_cid.clone(),
         )
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Blockchain transaction failed: {}", e),
-                }),
-            )
-        })?;
-
-    let ipfs_url = format!("https://ipfs.io/ipfs/{}", metadata_cid);
+        .map_err(ApiError::blockchain_failed)?;
 
     Ok(Json(ProcessBatchResponse {
-        tx_hash: format!("{:?}", receipt.transaction_hash),
-        input_batch_hash: format!("{:?}", input_batch_hash),
-        transform_hash: format!("{:?}", transform_hash),
-        output_batch_hashes: output_batch_hashes
-            .iter()
-            .map(|h| format!("{:?}", h))
-            .collect(),
-        metadata_cid,
-        ipfs_url,
+        tx_hash: format_tx_hash(receipt.transaction_hash),
+        input_batch_hash: format_hash(input_batch_hash),
+        transform_hash: format_hash(transform_hash),
+        output_batch_hashes: output_batch_hashes.iter().map(|h| format_hash(h)).collect(),
+        metadata_cid: metadata_cid.clone(),
+        ipfs_url: ipfs_gateway_url(&metadata_cid),
     }))
 }
 
@@ -477,8 +333,8 @@ pub async fn process_batch(
 pub struct CreateSkuRequest {
     pub sku_id: String,
     pub parent_batch_id: String,
-    pub unit_ids: Vec<String>, // Individual unit IDs for Merkle tree
-    pub packaging_metadata: serde_json::Value, // Labels, barcodes, etc.
+    pub unit_ids: Vec<String>,
+    pub packaging_metadata: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -494,61 +350,41 @@ pub struct CreateSkuResponse {
 pub async fn create_sku(
     State(state): State<AppState>,
     Json(payload): Json<CreateSkuRequest>,
-) -> Result<Json<CreateSkuResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> ApiResult<CreateSkuResponse> {
     tracing::info!(sku_id = %payload.sku_id, "Creating SKU");
 
-    // 1. Upload packaging metadata to IPFS
     let metadata_cid = state
         .ipfs_client
         .upload_json(&payload.packaging_metadata)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("IPFS upload failed: {}", e),
-                }),
-            )
-        })?;
+        .map_err(ApiError::ipfs_upload_failed)?;
 
-    // 2. Generate Merkle root from unit IDs
+    // Generate Merkle root from unit IDs
     let unit_hashes: Vec<FixedBytes<32>> =
         payload.unit_ids.iter().map(|id| hash_string(id)).collect();
 
-    // Simple Merkle root (hash of all hashes concatenated)
-    let mut merkle_data = Vec::new();
+    let mut merkle_data = Vec::with_capacity(unit_hashes.len() * 32);
     for hash in &unit_hashes {
         merkle_data.extend_from_slice(hash.as_slice());
     }
     let merkle_root = hash_bytes(&merkle_data);
 
-    // 3. Hash IDs
     let sku_id = hash_string(&payload.sku_id);
     let parent_batch_hash = hash_string(&payload.parent_batch_id);
 
-    // 4. Record on blockchain
     let receipt = state
         .chain_client
         .create_sku(sku_id, parent_batch_hash, merkle_root, metadata_cid.clone())
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Blockchain transaction failed: {}", e),
-                }),
-            )
-        })?;
-
-    let ipfs_url = format!("https://ipfs.io/ipfs/{}", metadata_cid);
+        .map_err(ApiError::blockchain_failed)?;
 
     Ok(Json(CreateSkuResponse {
-        tx_hash: format!("{:?}", receipt.transaction_hash),
+        tx_hash: format_tx_hash(receipt.transaction_hash),
         sku_id: payload.sku_id,
-        parent_batch_hash: format!("{:?}", parent_batch_hash),
-        merkle_root: format!("{:?}", merkle_root),
-        metadata_cid,
-        ipfs_url,
+        parent_batch_hash: format_hash(parent_batch_hash),
+        merkle_root: format_hash(merkle_root),
+        metadata_cid: metadata_cid.clone(),
+        ipfs_url: ipfs_gateway_url(&metadata_cid),
     }))
 }
 
@@ -557,7 +393,7 @@ pub async fn create_sku(
 #[derive(Debug, Deserialize)]
 pub struct ReportFraudRequest {
     pub sku_id: String,
-    pub evidence: serde_json::Value, // Photos, lab reports, complaints
+    pub evidence: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -572,59 +408,31 @@ pub struct ReportFraudResponse {
 pub async fn report_fraud(
     State(state): State<AppState>,
     Json(payload): Json<ReportFraudRequest>,
-) -> Result<Json<ReportFraudResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> ApiResult<ReportFraudResponse> {
     tracing::info!(sku_id = %payload.sku_id, "Reporting fraud");
 
-    // 1. Upload evidence to IPFS
     let evidence_cid = state
         .ipfs_client
         .upload_json(&payload.evidence)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("IPFS upload failed: {}", e),
-                }),
-            )
-        })?;
+        .map_err(ApiError::ipfs_upload_failed)?;
 
-    // 2. Hash evidence
-    let evidence_json = serde_json::to_vec(&payload.evidence).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("JSON serialization failed: {}", e),
-            }),
-        )
-    })?;
+    let evidence_json = serde_json::to_vec(&payload.evidence).map_err(ApiError::json_failed)?;
     let evidence_hash = hash_bytes(&evidence_json);
-
-    // 3. Hash SKU ID
     let sku_id = hash_string(&payload.sku_id);
 
-    // 4. Report on blockchain
     let receipt = state
         .chain_client
         .report_fraud(sku_id, evidence_hash, evidence_cid.clone())
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Blockchain transaction failed: {}", e),
-                }),
-            )
-        })?;
-
-    let ipfs_url = format!("https://ipfs.io/ipfs/{}", evidence_cid);
+        .map_err(ApiError::blockchain_failed)?;
 
     Ok(Json(ReportFraudResponse {
-        tx_hash: format!("{:?}", receipt.transaction_hash),
+        tx_hash: format_tx_hash(receipt.transaction_hash),
         sku_id: payload.sku_id,
-        evidence_hash: format!("{:?}", evidence_hash),
-        evidence_cid,
-        ipfs_url,
+        evidence_hash: format_hash(evidence_hash),
+        evidence_cid: evidence_cid.clone(),
+        ipfs_url: ipfs_gateway_url(&evidence_cid),
     }))
 }
 
@@ -633,8 +441,8 @@ pub async fn report_fraud(
 #[derive(Debug, Deserialize)]
 pub struct CommitAiScoreRequest {
     pub batch_id: String,
-    pub reveal_hash: String, // Hash of the actual score
-    pub nonce: String,       // Random nonce for commit-reveal
+    pub reveal_hash: String,
+    pub nonce: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -647,49 +455,31 @@ pub struct CommitAiScoreResponse {
 pub async fn commit_ai_score(
     State(state): State<AppState>,
     Json(payload): Json<CommitAiScoreRequest>,
-) -> Result<Json<CommitAiScoreResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> ApiResult<CommitAiScoreResponse> {
     tracing::info!(batch_id = %payload.batch_id, "Committing AI score");
 
-    // 1. Parse hashes
     let batch_hash = hash_string(&payload.batch_id);
-    let reveal_hash: FixedBytes<32> = payload.reveal_hash.parse().map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: format!("Invalid reveal hash: {}", e),
-            }),
-        )
-    })?;
-    let nonce: FixedBytes<32> = payload.nonce.parse().map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: format!("Invalid nonce: {}", e),
-            }),
-        )
-    })?;
+    let reveal_hash: FixedBytes<32> = payload
+        .reveal_hash
+        .parse()
+        .map_err(|e| ApiError::invalid_hash("reveal hash", e))?;
+    let nonce: FixedBytes<32> = payload
+        .nonce
+        .parse()
+        .map_err(|e| ApiError::invalid_hash("nonce", e))?;
 
-    // 2. Generate commit hash
     let commit_hash = crate::chain::generate_commit_hash(reveal_hash, nonce);
 
-    // 3. Commit on blockchain
     let receipt = state
         .chain_client
         .commit_ai_score(batch_hash, commit_hash)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Blockchain transaction failed: {}", e),
-                }),
-            )
-        })?;
+        .map_err(ApiError::blockchain_failed)?;
 
     Ok(Json(CommitAiScoreResponse {
-        tx_hash: format!("{:?}", receipt.transaction_hash),
+        tx_hash: format_tx_hash(receipt.transaction_hash),
         batch_id: payload.batch_id,
-        commit_hash: format!("{:?}", commit_hash),
+        commit_hash: format_hash(commit_hash),
     }))
 }
 
@@ -697,7 +487,7 @@ pub async fn commit_ai_score(
 pub struct RevealAiScoreRequest {
     pub batch_id: String,
     pub nonce: String,
-    pub score_data: serde_json::Value, // Full AI model outputs, explainability
+    pub score_data: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -712,67 +502,36 @@ pub struct RevealAiScoreResponse {
 pub async fn reveal_ai_score(
     State(state): State<AppState>,
     Json(payload): Json<RevealAiScoreRequest>,
-) -> Result<Json<RevealAiScoreResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> ApiResult<RevealAiScoreResponse> {
     tracing::info!(batch_id = %payload.batch_id, "Revealing AI score");
 
-    // 1. Upload score data to IPFS
     let metadata_cid = state
         .ipfs_client
         .upload_json(&payload.score_data)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("IPFS upload failed: {}", e),
-                }),
-            )
-        })?;
+        .map_err(ApiError::ipfs_upload_failed)?;
 
-    // 2. Hash score data for reveal
-    let score_json = serde_json::to_vec(&payload.score_data).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: format!("JSON serialization failed: {}", e),
-            }),
-        )
-    })?;
+    let score_json = serde_json::to_vec(&payload.score_data).map_err(ApiError::json_failed)?;
     let reveal_hash = hash_bytes(&score_json);
 
-    // 3. Parse IDs
     let batch_hash = hash_string(&payload.batch_id);
-    let nonce: FixedBytes<32> = payload.nonce.parse().map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: format!("Invalid nonce: {}", e),
-            }),
-        )
-    })?;
+    let nonce: FixedBytes<32> = payload
+        .nonce
+        .parse()
+        .map_err(|e| ApiError::invalid_hash("nonce", e))?;
 
-    // 4. Reveal on blockchain
     let receipt = state
         .chain_client
         .reveal_ai_score(batch_hash, reveal_hash, nonce, metadata_cid.clone())
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Blockchain transaction failed: {}", e),
-                }),
-            )
-        })?;
-
-    let ipfs_url = format!("https://ipfs.io/ipfs/{}", metadata_cid);
+        .map_err(ApiError::blockchain_failed)?;
 
     Ok(Json(RevealAiScoreResponse {
-        tx_hash: format!("{:?}", receipt.transaction_hash),
+        tx_hash: format_tx_hash(receipt.transaction_hash),
         batch_id: payload.batch_id,
-        reveal_hash: format!("{:?}", reveal_hash),
-        metadata_cid,
-        ipfs_url,
+        reveal_hash: format_hash(reveal_hash),
+        metadata_cid: metadata_cid.clone(),
+        ipfs_url: ipfs_gateway_url(&metadata_cid),
     }))
 }
 
@@ -795,26 +554,19 @@ pub struct VerifySkuResponse {
 pub async fn verify_sku(
     State(state): State<AppState>,
     Json(payload): Json<VerifySkuRequest>,
-) -> Result<Json<VerifySkuResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> ApiResult<VerifySkuResponse> {
     let sku_id = hash_string(&payload.sku_id);
 
     let result = state
         .chain_client
         .verify_package_origin(sku_id)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Verification failed: {}", e),
-                }),
-            )
-        })?;
+        .map_err(ApiError::blockchain_failed)?;
 
     Ok(Json(VerifySkuResponse {
         sku_id: payload.sku_id,
-        parent_batch_hash: format!("{:?}", result.0),
-        merkle_root: format!("{:?}", result.1),
+        parent_batch_hash: format_hash(result.0),
+        merkle_root: format_hash(result.1),
         packaged_at: result.2,
         exists: result.2 > 0,
     }))
@@ -836,33 +588,22 @@ pub struct VerifyFarmerResponse {
 pub async fn verify_farmer(
     State(state): State<AppState>,
     Json(payload): Json<VerifyFarmerRequest>,
-) -> Result<Json<VerifyFarmerResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let farmer_did: FixedBytes<32> = payload.farmer_did.parse().map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: format!("Invalid farmer DID: {}", e),
-            }),
-        )
-    })?;
+) -> ApiResult<VerifyFarmerResponse> {
+    let farmer_did: FixedBytes<32> = payload
+        .farmer_did
+        .parse()
+        .map_err(|e| ApiError::invalid_did(e))?;
 
     let result = state
         .chain_client
         .verify_farmer(farmer_did)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Verification failed: {}", e),
-                }),
-            )
-        })?;
+        .map_err(ApiError::blockchain_failed)?;
 
     Ok(Json(VerifyFarmerResponse {
         farmer_did: payload.farmer_did,
         exists: result.0,
-        crop_id_hash: format!("{:?}", result.1),
+        crop_id_hash: format_hash(result.1),
         registered_at: result.2,
     }))
 }
