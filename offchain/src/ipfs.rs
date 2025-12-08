@@ -669,23 +669,6 @@ pub async fn upload_warehouse_metadata(
     }))
 }
 
-// Utility function for error handling
-impl ApiError {
-    pub fn ipfs_upload_failed(err: anyhow::Error) -> Self {
-        error!(error = %err, "IPFS upload failed");
-        ApiError::InternalServer {
-            message: format!("IPFS upload failed: {}", err),
-        }
-    }
-
-    pub fn ipfs_retrieval_failed(err: anyhow::Error) -> Self {
-        error!(error = %err, "IPFS retrieval failed");
-        ApiError::InternalServer {
-            message: format!("IPFS retrieval failed: {}", err),
-        }
-    }
-}
-
 // Helper function to create gateway URL (for backward compatibility)
 pub fn ipfs_gateway_url(cid: &str) -> String {
     env::var("IPFS_GATEWAY_URL")
