@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 # Test script for OilseedValueChain deployment
 set -e
