@@ -101,3 +101,5 @@ artifacts/
 # IPFS local storage
 .ipfs/
 ipfs_data/
+
+foundry.lock
