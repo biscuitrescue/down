@@ -595,8 +595,8 @@ impl KeyManager {
                 // Check expiration
                 if let Some(expires_at) = &metadata.expires_at {
                     if let Ok(expiry) = chrono::DateTime::parse_from_rfc3339(expires_at) {
-                        let days_until_expiry =
-                            (expiry - chrono::Utc::now()).num_days();
+                        let expiry_utc: chrono::DateTime<chrono::Utc> = expiry.into();
+                        let days_until_expiry = (expiry_utc - chrono::Utc::now()).num_days();
                         if days_until_expiry < 0 {
                             stats.expired_keys += 1;
                         } else if days_until_expiry < 30 {
@@ -673,7 +673,11 @@ mod tests {
         let manager = KeyManager::local();
 
         let key = manager
-            .create_key("entity:farmer:123", KeyPurpose::PiiEncryption, Some("farmer:123".to_string()))
+            .create_key(
+                "entity:farmer:123",
+                KeyPurpose::PiiEncryption,
+                Some("farmer:123".to_string()),
+            )
             .await
             .unwrap();
 

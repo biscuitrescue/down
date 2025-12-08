@@ -14,8 +14,8 @@
 //! - Local IPFS node (development)
 
 pub mod infura;
-pub mod pinata;
 pub mod local;
+pub mod pinata;
 pub mod router;
 
 pub use router::IpfsRouter;
@@ -238,7 +238,7 @@ pub trait IpfsProvider: Send + Sync {
 }
 
 /// Provider statistics
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct ProviderStats {
     pub uploads: AtomicU64,
     pub downloads: AtomicU64,
@@ -256,14 +256,18 @@ impl ProviderStats {
 
     pub fn record_upload(&self, bytes: usize, latency_ms: u64) {
         self.uploads.fetch_add(1, Ordering::Relaxed);
-        self.bytes_uploaded.fetch_add(bytes as u64, Ordering::Relaxed);
-        self.total_latency_ms.fetch_add(latency_ms, Ordering::Relaxed);
+        self.bytes_uploaded
+            .fetch_add(bytes as u64, Ordering::Relaxed);
+        self.total_latency_ms
+            .fetch_add(latency_ms, Ordering::Relaxed);
     }
 
     pub fn record_download(&self, bytes: usize, latency_ms: u64) {
         self.downloads.fetch_add(1, Ordering::Relaxed);
-        self.bytes_downloaded.fetch_add(bytes as u64, Ordering::Relaxed);
-        self.total_latency_ms.fetch_add(latency_ms, Ordering::Relaxed);
+        self.bytes_downloaded
+            .fetch_add(bytes as u64, Ordering::Relaxed);
+        self.total_latency_ms
+            .fetch_add(latency_ms, Ordering::Relaxed);
     }
 
     pub fn record_pin(&self) {
@@ -275,8 +279,8 @@ impl ProviderStats {
     }
 
     pub fn average_latency_ms(&self) -> Option<u64> {
-        let total_ops = self.uploads.load(Ordering::Relaxed)
-            + self.downloads.load(Ordering::Relaxed);
+        let total_ops =
+            self.uploads.load(Ordering::Relaxed) + self.downloads.load(Ordering::Relaxed);
         if total_ops == 0 {
             None
         } else {
@@ -470,8 +474,8 @@ impl Default for RetryConfig {
 impl RetryConfig {
     /// Calculate backoff duration for a given attempt
     pub fn backoff_for_attempt(&self, attempt: u32) -> Duration {
-        let backoff_ms = self.initial_backoff.as_millis() as f64
-            * self.backoff_multiplier.powi(attempt as i32);
+        let backoff_ms =
+            self.initial_backoff.as_millis() as f64 * self.backoff_multiplier.powi(attempt as i32);
         let backoff = Duration::from_millis(backoff_ms as u64);
         std::cmp::min(backoff, self.max_backoff)
     }

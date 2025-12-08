@@ -152,7 +152,7 @@ pub struct ValidationError {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValidationErrorType {
     MissingRequiredField,
     InvalidType,
@@ -171,7 +171,7 @@ pub struct ValidationWarning {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValidationWarningType {
     UnknownField,
     DeprecatedField,

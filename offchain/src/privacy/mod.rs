@@ -126,7 +126,6 @@ impl Default for PrivacyClassification {
 }
 
 /// Privacy processor that handles PII detection and encryption
-#[derive(Clone)]
 pub struct PrivacyProcessor {
     detector: PiiDetector,
     encryptor: DataEncryptor,
@@ -271,7 +270,11 @@ impl PrivacyProcessor {
                 encryption_key_id: Some(key_id),
                 encryption_algorithm: Some(self.config.default_algorithm.clone()),
                 pii_fields: encrypted_field_paths,
-                access_roles: vec![AccessRole::Authorized, AccessRole::Regulator, AccessRole::Admin],
+                access_roles: vec![
+                    AccessRole::Authorized,
+                    AccessRole::Regulator,
+                    AccessRole::Admin,
+                ],
             },
         })
     }
@@ -317,8 +320,10 @@ impl PrivacyProcessor {
     ) -> anyhow::Result<serde_json::Value> {
         let mut merged = public_data.clone();
 
-        if let (serde_json::Value::Object(ref mut merged_map), serde_json::Value::Object(private_map)) =
-            (&mut merged, private_data)
+        if let (
+            serde_json::Value::Object(ref mut merged_map),
+            serde_json::Value::Object(private_map),
+        ) = (&mut merged, private_data)
         {
             for (key, value) in private_map {
                 merged_map.insert(key.clone(), value.clone());
@@ -487,7 +492,10 @@ mod tests {
         // Field should be removed
         assert!(doc.get("profile").unwrap().get("name").is_none());
         // Other fields should remain
-        assert_eq!(doc.get("profile").unwrap().get("age"), Some(&serde_json::json!(30)));
+        assert_eq!(
+            doc.get("profile").unwrap().get("age"),
+            Some(&serde_json::json!(30))
+        );
     }
 
     #[test]

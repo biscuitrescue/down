@@ -8,17 +8,19 @@
 //! - Health-aware routing
 
 use super::{
-    CircuitBreaker, CircuitBreakerConfig, CircuitState, Cid, IpfsError, IpfsProvider, IpfsResult,
-    ProviderHealth, ProviderStats, ProviderStatsSnapshot, RetryConfig, UploadResult,
+    Cid, CircuitBreaker, CircuitBreakerConfig, CircuitState, IpfsError, IpfsProvider, IpfsResult,
+    ProviderHealth, ProviderStats, ProviderStatsSnapshot, UploadResult,
 };
+#[allow(unused_imports)]
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+#[allow(unused_imports)]
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, RwLock};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Configuration for the provider router
 #[derive(Debug, Clone)]
@@ -597,8 +599,12 @@ impl IpfsRouter {
                 provider_name: name,
                 is_healthy,
                 last_check: Some(chrono::Utc::now().to_rfc3339()),
-                last_success: health_state.last_success.map(|_| chrono::Utc::now().to_rfc3339()),
-                last_failure: health_state.last_failure.map(|_| chrono::Utc::now().to_rfc3339()),
+                last_success: health_state
+                    .last_success
+                    .map(|_| chrono::Utc::now().to_rfc3339()),
+                last_failure: health_state
+                    .last_failure
+                    .map(|_| chrono::Utc::now().to_rfc3339()),
                 success_count: 0, // We don't track cumulative success count
                 failure_count: health_state.consecutive_failures as u64,
                 average_latency_ms: health_state.average_latency_ms(),
@@ -642,14 +648,23 @@ impl IpfsRouter {
         }
     }
 
-    /// Get the primary gateway URL
+    /// Get the primary gateway base URL
     pub fn gateway_url(&self) -> Option<String> {
-        self.providers.first().map(|e| e.provider.gateway_url())
+        let dummy_cid = Cid::new("QmDummy");
+        self.providers
+            .first()
+            .map(|e| e.provider.gateway_url(&dummy_cid))
+            .map(|url| {
+                // Remove the CID suffix to get base URL
+                url.rsplit_once("/ipfs/")
+                    .map(|(base, _)| base.to_string())
+                    .unwrap_or(url)
+            })
     }
 
     /// Get gateway URL for a specific CID
     pub fn gateway_url_for_cid(&self, cid: &Cid) -> Option<String> {
-        self.gateway_url().map(|url| format!("{}/ipfs/{}", url, cid))
+        self.providers.first().map(|e| e.provider.gateway_url(cid))
     }
 
     // Internal: Queue async pins to secondary providers
@@ -688,7 +703,12 @@ impl IpfsRouter {
 
         for (idx, entry) in self.providers.iter().enumerate() {
             let health = entry.health.read().await;
-            indices.push((idx, entry.priority, health.is_healthy, health.average_latency_ms()));
+            indices.push((
+                idx,
+                entry.priority,
+                health.is_healthy,
+                health.average_latency_ms(),
+            ));
         }
 
         // Sort by: healthy first, then by priority, then by latency
@@ -731,7 +751,11 @@ impl IpfsRouter {
 /// Builder for IpfsRouter
 pub struct IpfsRouterBuilder {
     config: RouterConfig,
-    providers: Vec<(Box<dyn IpfsProvider + Send + Sync>, u32, Option<CircuitBreakerConfig>)>,
+    providers: Vec<(
+        Box<dyn IpfsProvider + Send + Sync>,
+        u32,
+        Option<CircuitBreakerConfig>,
+    )>,
 }
 
 impl IpfsRouterBuilder {
@@ -873,21 +897,22 @@ mod tests {
             &self.name
         }
 
-        fn gateway_url(&self) -> String {
-            format!("https://{}.example.com", self.name)
+        fn gateway_url(&self, cid: &Cid) -> String {
+            format!("https://{}.example.com/ipfs/{}", self.name, cid)
         }
 
         async fn upload(&self, data: &[u8]) -> IpfsResult<UploadResult> {
             tokio::time::sleep(Duration::from_millis(self.latency_ms)).await;
 
             if self.should_fail {
-                return Err(IpfsError::UploadFailed {
-                    message: "Mock failure".to_string(),
-                });
+                return Err(IpfsError::UploadFailed("Mock failure".to_string()));
             }
 
             Ok(UploadResult {
-                cid: Cid::new(format!("Qm{}", hex::encode(&data[..std::cmp::min(22, data.len())]))),
+                cid: Cid::new(format!(
+                    "Qm{}",
+                    hex::encode(&data[..std::cmp::min(22, data.len())])
+                )),
                 size_bytes: data.len(),
                 provider: self.name.clone(),
                 upload_time_ms: self.latency_ms,
@@ -899,9 +924,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(self.latency_ms)).await;
 
             if self.should_fail {
-                return Err(IpfsError::DownloadFailed {
-                    message: "Mock failure".to_string(),
-                });
+                return Err(IpfsError::DownloadFailed("Mock failure".to_string()));
             }
 
             Ok(format!("data for {}", cid).into_bytes())
@@ -911,9 +934,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(self.latency_ms)).await;
 
             if self.should_fail {
-                return Err(IpfsError::PinFailed {
-                    message: "Mock failure".to_string(),
-                });
+                return Err(IpfsError::PinFailed("Mock failure".to_string()));
             }
 
             Ok(())
@@ -921,9 +942,7 @@ mod tests {
 
         async fn unpin(&self, _cid: &Cid) -> IpfsResult<()> {
             if self.should_fail {
-                return Err(IpfsError::UnpinFailed {
-                    message: "Mock failure".to_string(),
-                });
+                return Err(IpfsError::UnpinFailed("Mock failure".to_string()));
             }
             Ok(())
         }
@@ -932,26 +951,15 @@ mod tests {
             Ok(!self.should_fail)
         }
 
-        async fn health_check(&self) -> IpfsResult<()> {
+        async fn health_check(&self) -> IpfsResult<bool> {
             if self.should_fail {
-                return Err(IpfsError::ProviderUnavailable {
-                    provider: self.name.clone(),
-                    message: "Mock unhealthy".to_string(),
-                });
+                return Err(IpfsError::ProviderUnavailable("Mock unhealthy".to_string()));
             }
-            Ok(())
+            Ok(true)
         }
 
-        fn stats(&self) -> ProviderStatsSnapshot {
-            ProviderStatsSnapshot {
-                uploads: 0,
-                downloads: 0,
-                pins: 0,
-                failures: 0,
-                bytes_uploaded: 0,
-                bytes_downloaded: 0,
-                average_latency_ms: Some(self.latency_ms),
-            }
+        fn stats(&self) -> ProviderStats {
+            ProviderStats::new()
         }
     }
 
@@ -1095,9 +1103,7 @@ mod tests {
             .min_healthy_providers(2)
             .health_check_interval(Duration::from_secs(60));
 
-        let router = builder
-            .add_provider(MockProvider::new("test"), 1)
-            .build();
+        let router = builder.add_provider(MockProvider::new("test"), 1).build();
 
         assert!(router.gateway_url().is_some());
     }

@@ -27,13 +27,13 @@ pub struct IpfsConfig {
 
 impl IpfsConfig {
     pub fn from_env() -> Result<Self> {
-        let primary_api_url = env::var("IPFS_API_URL")
-            .context("IPFS_API_URL environment variable is required")?;
+        let primary_api_url =
+            env::var("IPFS_API_URL").context("IPFS_API_URL environment variable is required")?;
 
         let backup_api_url = env::var("IPFS_BACKUP_API_URL").ok();
 
-        let gateway_url = env::var("IPFS_GATEWAY_URL")
-            .unwrap_or_else(|_| "https://ipfs.io/ipfs/".to_string());
+        let gateway_url =
+            env::var("IPFS_GATEWAY_URL").unwrap_or_else(|_| "https://ipfs.io/ipfs/".to_string());
 
         let project_id = env::var("IPFS_PROJECT_ID").ok();
         let project_secret = env::var("IPFS_PROJECT_SECRET").ok();
@@ -272,12 +272,14 @@ impl IpfsClient {
 
     // Upload JSON data with metadata wrapper
     pub async fn upload_json<T: Serialize>(&self, value: &T) -> Result<String> {
-        let json_bytes = serde_json::to_vec(value)
-            .context("Failed to serialize value to JSON")?;
+        let json_bytes = serde_json::to_vec(value).context("Failed to serialize value to JSON")?;
 
         // Check file size
         if json_bytes.len() > self.config.max_file_size_mb * 1024 * 1024 {
-            anyhow::bail!("File size exceeds maximum limit of {} MB", self.config.max_file_size_mb);
+            anyhow::bail!(
+                "File size exceeds maximum limit of {} MB",
+                self.config.max_file_size_mb
+            );
         }
 
         self.upload_bytes_with_retry(json_bytes).await
@@ -342,13 +344,15 @@ impl IpfsClient {
         let mut request = self.http_client.post(&url).multipart(form);
 
         // Add authentication if available
-        if let (Some(ref id), Some(ref secret)) = (&self.config.project_id, &self.config.project_secret) {
+        if let (Some(ref id), Some(ref secret)) =
+            (&self.config.project_id, &self.config.project_secret)
+        {
             request = request.basic_auth(id, Some(secret));
         }
 
         let response = timeout(
             Duration::from_secs(self.config.timeout_seconds),
-            request.send()
+            request.send(),
         )
         .await
         .context("Request timed out")?
@@ -371,8 +375,8 @@ impl IpfsClient {
     // Pin content to backup service (Pinata)
     async fn pin_to_backup(&self, cid: &str, _bytes: &[u8]) -> Result<()> {
         if let (Some(ref api_key), Some(ref secret_key)) =
-            (&self.config.pinata_api_key, &self.config.pinata_secret_key) {
-
+            (&self.config.pinata_api_key, &self.config.pinata_secret_key)
+        {
             debug!(cid = %cid, "Pinning to Pinata backup service");
 
             let url = "https://api.pinata.cloud/pinning/pinByHash";
@@ -388,7 +392,8 @@ impl IpfsClient {
                 }
             });
 
-            let response = self.http_client
+            let response = self
+                .http_client
                 .post(url)
                 .header("pinata_api_key", api_key)
                 .header("pinata_secret_api_key", secret_key)
@@ -416,13 +421,15 @@ impl IpfsClient {
         let mut request = self.http_client.post(&url);
 
         // Add authentication if available
-        if let (Some(ref id), Some(ref secret)) = (&self.config.project_id, &self.config.project_secret) {
+        if let (Some(ref id), Some(ref secret)) =
+            (&self.config.project_id, &self.config.project_secret)
+        {
             request = request.basic_auth(id, Some(secret));
         }
 
         let response = timeout(
             Duration::from_secs(self.config.timeout_seconds),
-            request.send()
+            request.send(),
         )
         .await
         .context("Request timed out")?
@@ -432,15 +439,17 @@ impl IpfsClient {
             anyhow::bail!("Failed to retrieve content: {}", response.status());
         }
 
-        let bytes = response.bytes().await.context("Failed to read response body")?;
+        let bytes = response
+            .bytes()
+            .await
+            .context("Failed to read response body")?;
         Ok(bytes.to_vec())
     }
 
     // Get JSON content and deserialize
     pub async fn get_json<T: for<'de> Deserialize<'de>>(&self, cid: &str) -> Result<T> {
         let bytes = self.get_content(cid).await?;
-        let value = serde_json::from_slice(&bytes)
-            .context("Failed to deserialize JSON content")?;
+        let value = serde_json::from_slice(&bytes).context("Failed to deserialize JSON content")?;
         Ok(value)
     }
 
@@ -455,7 +464,9 @@ impl IpfsClient {
 
         let mut request = self.http_client.post(&url);
 
-        if let (Some(ref id), Some(ref secret)) = (&self.config.project_id, &self.config.project_secret) {
+        if let (Some(ref id), Some(ref secret)) =
+            (&self.config.project_id, &self.config.project_secret)
+        {
             request = request.basic_auth(id, Some(secret));
         }
 
@@ -467,8 +478,8 @@ impl IpfsClient {
 
     // Create standardized metadata wrapper
     pub fn create_metadata<T: Serialize>(&self, stage: &str, content: &T) -> Result<IpfsMetadata> {
-        let content_json = serde_json::to_string(content)
-            .context("Failed to serialize content for metadata")?;
+        let content_json =
+            serde_json::to_string(content).context("Failed to serialize content for metadata")?;
 
         let content_hash = format!("{:x}", md5::compute(content_json.as_bytes()));
 
@@ -532,7 +543,8 @@ pub async fn upload_to_ipfs(
     let stage = payload.stage.as_deref().unwrap_or("generic");
 
     // Create metadata wrapper
-    let metadata = state.ipfs_client
+    let metadata = state
+        .ipfs_client
         .create_metadata(stage, &payload.data)
         .map_err(ApiError::ipfs_upload_failed)?;
 
@@ -542,8 +554,9 @@ pub async fn upload_to_ipfs(
         "content": payload.data
     });
 
-    let document_json = serde_json::to_string(&document)
-        .map_err(ApiError::ipfs_upload_failed)?;
+    let document_json = serde_json::to_string(&document).map_err(ApiError::ipfs_upload_failed)?;
+
+    let size_bytes = document_json.len();
 
     let cid = state
         .ipfs_client
@@ -556,7 +569,7 @@ pub async fn upload_to_ipfs(
     Ok(Json(UploadResponse {
         gateway_url: state.ipfs_client.gateway_url(&cid),
         cid,
-        size_bytes: document_json.len(),
+        size_bytes,
         timestamp: chrono::Utc::now().to_rfc3339(),
     }))
 }
@@ -576,7 +589,9 @@ pub async fn retrieve_from_ipfs(
     let metadata = document
         .get("metadata")
         .and_then(|m| serde_json::from_value(m.clone()).ok())
-        .ok_or_else(|| ApiError::ipfs_retrieval_failed(anyhow::anyhow!("Invalid document format")))?;
+        .ok_or_else(|| {
+            ApiError::ipfs_retrieval_failed(anyhow::anyhow!("Invalid document format"))
+        })?;
 
     let content = document
         .get("content")
@@ -591,14 +606,14 @@ pub async fn retrieve_from_ipfs(
 
 // Health check endpoint
 pub async fn ipfs_health(State(state): State<AppState>) -> ApiResult<HealthResponse> {
-    let ipfs_connected = state
-        .ipfs_client
-        .health_check()
-        .await
-        .unwrap_or(false);
+    let ipfs_connected = state.ipfs_client.health_check().await.unwrap_or(false);
 
     Ok(Json(HealthResponse {
-        status: if ipfs_connected { "healthy".to_string() } else { "unhealthy".to_string() },
+        status: if ipfs_connected {
+            "healthy".to_string()
+        } else {
+            "unhealthy".to_string()
+        },
         ipfs_connected,
         timestamp: chrono::Utc::now().to_rfc3339(),
     }))
@@ -671,6 +686,5 @@ pub async fn upload_warehouse_metadata(
 
 // Helper function to create gateway URL (for backward compatibility)
 pub fn ipfs_gateway_url(cid: &str) -> String {
-    env::var("IPFS_GATEWAY_URL")
-        .unwrap_or_else(|_| "https://ipfs.io/ipfs/".to_string()) + cid
+    env::var("IPFS_GATEWAY_URL").unwrap_or_else(|_| "https://ipfs.io/ipfs/".to_string()) + cid
 }

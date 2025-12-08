@@ -44,6 +44,10 @@ impl ApiError {
         Self::internal(format!("IPFS upload failed: {}", e))
     }
 
+    pub fn ipfs_retrieval_failed(e: impl std::fmt::Display) -> Self {
+        Self::internal(format!("IPFS retrieval failed: {}", e))
+    }
+
     pub fn blockchain_failed(e: impl std::fmt::Display) -> Self {
         Self::internal(format!("Blockchain transaction failed: {}", e))
     }

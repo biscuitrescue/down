@@ -553,15 +553,18 @@ impl PinningWorker {
                             tokio::time::timeout(config.job_timeout, p.pin(&cid)).await
                         }
                         None => {
-                            Err(tokio::time::error::Elapsed::new())
+                            // No provider found - create a timeout error using a zero-duration timeout
+                            tokio::time::timeout(Duration::ZERO, async {
+                                Err::<(), String>("Provider not found".to_string())
+                            })
+                            .await
                         }
                     };
 
                     let processing_time = start_time.elapsed();
-                    stats.total_processing_time_ms.fetch_add(
-                        processing_time.as_millis() as u64,
-                        Ordering::Relaxed,
-                    );
+                    stats
+                        .total_processing_time_ms
+                        .fetch_add(processing_time.as_millis() as u64, Ordering::Relaxed);
 
                     // Remove from in-progress
                     {
@@ -765,8 +768,8 @@ mod tests {
 
     #[test]
     fn test_pinning_job_retry() {
-        let mut job = PinningJob::new("QmTestCid".to_string(), "provider1".to_string())
-            .with_max_retries(2);
+        let mut job =
+            PinningJob::new("QmTestCid".to_string(), "provider1".to_string()).with_max_retries(2);
 
         assert!(job.can_retry());
 
@@ -799,15 +802,24 @@ mod tests {
     fn test_priority_ordering() {
         let critical = PinningJob::new("cid1".to_string(), "p".to_string())
             .with_priority(PinPriority::Critical);
-        let normal = PinningJob::new("cid2".to_string(), "p".to_string())
-            .with_priority(PinPriority::Normal);
-        let low = PinningJob::new("cid3".to_string(), "p".to_string())
-            .with_priority(PinPriority::Low);
+        let normal =
+            PinningJob::new("cid2".to_string(), "p".to_string()).with_priority(PinPriority::Normal);
+        let low =
+            PinningJob::new("cid3".to_string(), "p".to_string()).with_priority(PinPriority::Low);
 
         let now = Instant::now();
-        let pj1 = PrioritizedJob { job: critical, scheduled_at: now };
-        let pj2 = PrioritizedJob { job: normal, scheduled_at: now };
-        let pj3 = PrioritizedJob { job: low, scheduled_at: now };
+        let pj1 = PrioritizedJob {
+            job: critical,
+            scheduled_at: now,
+        };
+        let pj2 = PrioritizedJob {
+            job: normal,
+            scheduled_at: now,
+        };
+        let pj3 = PrioritizedJob {
+            job: low,
+            scheduled_at: now,
+        };
 
         // Critical > Normal > Low
         assert!(pj1 > pj2);
@@ -824,7 +836,9 @@ mod tests {
         };
 
         let worker = PinningWorker::new(config);
-        worker.register_provider(MockPinningProvider::new("test")).await;
+        worker
+            .register_provider(MockPinningProvider::new("test"))
+            .await;
 
         let job = PinningJob::new("QmTestCid".to_string(), "test".to_string());
         let result = worker.submit(job).await;

@@ -4,8 +4,8 @@
 //! https://docs.infura.io/networks/ipfs
 
 use super::{
-    Cid, CircuitBreaker, CircuitBreakerConfig, IpfsError, IpfsProvider, IpfsResult,
-    ProviderAuth, ProviderConfig, ProviderStats, RetryConfig, UploadResult,
+    Cid, CircuitBreaker, CircuitBreakerConfig, IpfsError, IpfsProvider, IpfsResult, ProviderAuth,
+    ProviderConfig, ProviderStats, RetryConfig, UploadResult,
 };
 use async_trait::async_trait;
 use reqwest::multipart::{Form, Part};
@@ -368,13 +368,10 @@ impl IpfsProvider for InfuraProvider {
             .await
             .map_err(|e| IpfsError::NetworkError(e.to_string()))?;
 
-        if !response.status().is_success() {
+        let status = response.status();
+        if !status.is_success() {
             let error_body = response.text().await.unwrap_or_default();
-            let error = IpfsError::PinFailed(format!(
-                "HTTP {}: {}",
-                response.status(),
-                error_body
-            ));
+            let error = IpfsError::PinFailed(format!("HTTP {}: {}", status, error_body));
             self.record_failure(&error).await;
             return Err(error);
         }
@@ -411,11 +408,7 @@ impl IpfsProvider for InfuraProvider {
         let status = response.status();
         if !status.is_success() {
             let error_body = response.text().await.unwrap_or_default();
-            let error = IpfsError::UnpinFailed(format!(
-                "HTTP {}: {}",
-                status,
-                error_body
-            ));
+            let error = IpfsError::UnpinFailed(format!("HTTP {}: {}", status, error_body));
             self.record_failure(&error).await;
             return Err(error);
         }
@@ -495,25 +488,37 @@ impl IpfsProvider for InfuraProvider {
     fn stats(&self) -> ProviderStats {
         ProviderStats {
             uploads: std::sync::atomic::AtomicU64::new(
-                self.stats.uploads.load(std::sync::atomic::Ordering::Relaxed),
+                self.stats
+                    .uploads
+                    .load(std::sync::atomic::Ordering::Relaxed),
             ),
             downloads: std::sync::atomic::AtomicU64::new(
-                self.stats.downloads.load(std::sync::atomic::Ordering::Relaxed),
+                self.stats
+                    .downloads
+                    .load(std::sync::atomic::Ordering::Relaxed),
             ),
             pins: std::sync::atomic::AtomicU64::new(
                 self.stats.pins.load(std::sync::atomic::Ordering::Relaxed),
             ),
             failures: std::sync::atomic::AtomicU64::new(
-                self.stats.failures.load(std::sync::atomic::Ordering::Relaxed),
+                self.stats
+                    .failures
+                    .load(std::sync::atomic::Ordering::Relaxed),
             ),
             bytes_uploaded: std::sync::atomic::AtomicU64::new(
-                self.stats.bytes_uploaded.load(std::sync::atomic::Ordering::Relaxed),
+                self.stats
+                    .bytes_uploaded
+                    .load(std::sync::atomic::Ordering::Relaxed),
             ),
             bytes_downloaded: std::sync::atomic::AtomicU64::new(
-                self.stats.bytes_downloaded.load(std::sync::atomic::Ordering::Relaxed),
+                self.stats
+                    .bytes_downloaded
+                    .load(std::sync::atomic::Ordering::Relaxed),
             ),
             total_latency_ms: std::sync::atomic::AtomicU64::new(
-                self.stats.total_latency_ms.load(std::sync::atomic::Ordering::Relaxed),
+                self.stats
+                    .total_latency_ms
+                    .load(std::sync::atomic::Ordering::Relaxed),
             ),
         }
     }
@@ -539,10 +544,7 @@ mod tests {
         let provider = InfuraProvider::new(test_config()).unwrap();
         let cid = Cid::new("QmTest123");
 
-        assert_eq!(
-            provider.gateway_url(&cid),
-            "https://ipfs.io/ipfs/QmTest123"
-        );
+        assert_eq!(provider.gateway_url(&cid), "https://ipfs.io/ipfs/QmTest123");
     }
 
     #[test]
@@ -567,6 +569,7 @@ mod tests {
         assert!(auth.starts_with("Basic "));
         // Verify it's valid base64
         let encoded = auth.strip_prefix("Basic ").unwrap();
+        use base64::Engine;
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(encoded)
             .unwrap();
