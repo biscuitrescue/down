@@ -8,14 +8,14 @@ contract OilseedValueChain {
     // Using bitmap for roles: each bit represents a role.
     // Using uint256 instead of uint8 for future-proofing (more roles, no extra storage cost).
 
-    uint256 constant ROLE_ADMIN      = 1 << 0; // 000...0001
-    uint256 constant ROLE_FARMER     = 1 << 1; // 000...0010
-    uint256 constant ROLE_FPO        = 1 << 2; // 000...0100
-    uint256 constant ROLE_WAREHOUSE  = 1 << 3; // 000...1000
-    uint256 constant ROLE_LOGISTICS  = 1 << 4; // 000..1_0000
-    uint256 constant ROLE_PROCESSOR  = 1 << 5; // ...
-    uint256 constant ROLE_PACKAGER   = 1 << 6;
-    uint256 constant ROLE_AI_ORACLE  = 1 << 7;
+    uint256 constant ROLE_ADMIN = 1 << 0; // 000...0001
+    uint256 constant ROLE_FARMER = 1 << 1; // 000...0010
+    uint256 constant ROLE_FPO = 1 << 2; // 000...0100
+    uint256 constant ROLE_WAREHOUSE = 1 << 3; // 000...1000
+    uint256 constant ROLE_LOGISTICS = 1 << 4; // 000..1_0000
+    uint256 constant ROLE_PROCESSOR = 1 << 5; // ...
+    uint256 constant ROLE_PACKAGER = 1 << 6;
+    uint256 constant ROLE_AI_ORACLE = 1 << 7;
 
     mapping(address => uint256) private roles;
 
@@ -65,7 +65,10 @@ contract OilseedValueChain {
         emit RoleRevoked(account, role);
     }
 
-    function hasRole(address account, uint256 role) external view returns (bool) {
+    function hasRole(
+        address account,
+        uint256 role
+    ) external view returns (bool) {
         return roles[account] & role != 0;
     }
 
@@ -114,9 +117,9 @@ contract OilseedValueChain {
     // Off-chain: Quality report, weight slips, photos on IPFS
 
     uint8 constant TRANSFER_FPO_PURCHASE = 1;
-    uint8 constant TRANSFER_WAREHOUSE    = 2;
-    uint8 constant TRANSFER_PROCESSOR    = 3;
-    uint8 constant TRANSFER_RETAIL       = 4;
+    uint8 constant TRANSFER_WAREHOUSE = 2;
+    uint8 constant TRANSFER_PROCESSOR = 3;
+    uint8 constant TRANSFER_RETAIL = 4;
 
     // metadataCID: IPFS CID for docs like receipts, quality reports, etc.
     event OwnershipTransfer(
@@ -176,7 +179,12 @@ contract OilseedValueChain {
             lastUpdated: timestamp
         });
 
-        emit WarehouseStateUpdated(warehouseId, stateHash, timestamp, metadataCID);
+        emit WarehouseStateUpdated(
+            warehouseId,
+            stateHash,
+            timestamp,
+            metadataCID
+        );
     }
 
     // ======================== STAGE 4: LOGISTICS TRACKING ========================
@@ -272,7 +280,13 @@ contract OilseedValueChain {
             packagedAt: timestamp
         });
 
-        emit SKUPackaged(skuId, parentBatchHash, merkleRoot, timestamp, metadataCID);
+        emit SKUPackaged(
+            skuId,
+            parentBatchHash,
+            merkleRoot,
+            timestamp,
+            metadataCID
+        );
     }
 
     // ======================== STAGE 7: RETAIL / FRAUD REPORTING ========================
@@ -370,8 +384,10 @@ contract OilseedValueChain {
         uint64 timestamp = uint64(block.timestamp);
 
         // Enforce time-locked reveal period
-        if (timestamp < score.committedAt + MIN_REVEAL_DELAY) revert RevealTooEarly();
-        if (timestamp > score.committedAt + MAX_REVEAL_DELAY) revert RevealTooLate();
+        if (timestamp < score.committedAt + MIN_REVEAL_DELAY)
+            revert RevealTooEarly();
+        if (timestamp > score.committedAt + MAX_REVEAL_DELAY)
+            revert RevealTooLate();
 
         // Verify commit matches reveal
         bytes32 expectedCommit = computeAIScoreCommit(revealHash, nonce);
@@ -402,7 +418,12 @@ contract OilseedValueChain {
             });
 
             // No CID in batch mode to avoid string arrays; off-chain can still correlate by timestamp
-            emit WarehouseStateUpdated(warehouseIds[i], stateHashes[i], timestamp, "");
+            emit WarehouseStateUpdated(
+                warehouseIds[i],
+                stateHashes[i],
+                timestamp,
+                ""
+            );
 
             unchecked {
                 ++i;
@@ -495,4 +516,3 @@ contract OilseedValueChain {
         );
     }
 }
-

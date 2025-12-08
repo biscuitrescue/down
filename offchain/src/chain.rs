@@ -36,8 +36,6 @@ type AppProvider = alloy::providers::fillers::FillProvider<
 sol! {
     #[sol(rpc)]
     contract OilseedValueChain {
-        // ==================== EVENTS ====================
-
         event RoleGranted(address indexed account, uint8 role);
         event RoleRevoked(address indexed account, uint8 role);
 
