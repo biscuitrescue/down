@@ -1,9 +1,103 @@
-/build
-/offchain/target/
-/offchain/Cargo.lock
-/offchain/.env.example
-/offchain/.env
-/offchain/.env.test
-/offchain/server.log
-/test_data
-target/rust-analyzer/flycheck0
+# Rust/Cargo
+target/
+offchain/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+rust-analyzer/
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+*.env
+offchain/.env
+offchain/.env.local
+offchain/.env.example
+offchain/.env.test
+offchain/.env.production
+
+# Private keys and sensitive data
+*.key
+*.pem
+private_key*
+secrets/
+.secrets/
+
+# Logs
+*.log
+offchain/server.log
+anvil.log
+ipfs.log
+offchain_server.log
+*.log.*
+
+# Node modules and npm
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Foundry/Forge
+cache/
+out/
+broadcast/
+lib/
+
+# Build outputs
+build/
+dist/
+*.wasm
+*.so
+*.dll
+*.dylib
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-workspace
+*.sublime-project
+
+# Test data and temporary files
+test_data/
+tmp/
+temp/
+*.tmp
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Coverage and profiling
+coverage/
+*.profraw
+*.profdata
+
+# OS specific
+Thumbs.db
+.DS_Store
+._*
+
+# Generated documentation
+docs/build/
+site/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Deployment artifacts
+deployment/
+artifacts/
+
+# IPFS local storage
+.ipfs/
+ipfs_data/
