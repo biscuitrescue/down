@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "forge-std/Script.sol";
-import "../src/OilseedValueChain.sol";
+import {Script, console} from "forge-std/Script.sol";
+import {OilseedValueChain} from "../src/OilseedValueChain.sol";
 
 contract DeployScript is Script {
     function run() external {
