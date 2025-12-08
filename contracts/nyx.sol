@@ -37,15 +37,14 @@ contract OilseedValueChain {
     error RevealTooLate();
 
     constructor() {
-        // Grant all roles to deployer (admin key or multisig recommended off-chain)
-        roles[msg.sender] = type(uint256).max;
-        emit RoleGranted(msg.sender, type(uint256).max);
+        roles[msg.sender] = ROLE_ADMIN;
+        emit RoleGranted(msg.sender, ROLE_ADMIN);
     }
 
     // ======================== ACCESS CONTROL FUNCTIONS ========================
 
     modifier onlyRole(uint256 role) {
-        if (roles[msg.sender] & role == 0) revert Unauthorized();
+        if ((roles[msg.sender] & role) == 0) revert Unauthorized();
         _;
     }
 
@@ -96,7 +95,7 @@ contract OilseedValueChain {
         bytes32 farmerDID,
         bytes32 cropIDHash,
         string calldata metadataCID
-    ) external onlyRole(ROLE_FARMER) {
+    ) external onlyRole(ROLE_FPO) {
         if (farmers[farmerDID].registeredAt != 0) revert AlreadyRegistered();
 
         uint64 timestamp = uint64(block.timestamp);
