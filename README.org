@@ -1,0 +1,210 @@
+#+TITLE: OilsChain (Seed2Shelf traceability)
+#+OPTIONS: toc:2 num:nil
+
+Batch-level traceability for the Indian oilseed value chain: farmer → FPO → warehouse → logistics →
+processor → packager → consumer.
+
+Full records live on IPFS. An EVM contract holds only ids, hashes, custody and lifecycle state. Anyone can
+re-verify every record end to end, from the chain and IPFS alone, without trusting the backend.
+
+Built for Smart India Hackathon 2025, problem statement 25270, Team Lumora.
+
+* Repository layout
+
+| Path         | Contents                                                                                  |
+|--------------+-------------------------------------------------------------------------------------------|
+| =contracts/= | Foundry: =OilseedValueChain=, =BatchProvenanceNFT= (ERC-721), =FarmerCredential= (ERC-5192 soulbound) |
+| =backend/=   | Rust (axum, tokio, alloy, reqwest, SQLite): API, operation journal, IPFS, verifier, rankings |
+| =frontend/=  | Static web UI served by the backend (no build step)                                       |
+| =scripts/=   | =dev-stack.sh=, =e2e.sh=, =check.sh=, =export-artifacts.sh=                               |
+| =docs/=      | =ARCHITECTURE.md=, =INTEGRITY.md=, =RANKING.md=, =API.md=                                 |
+| =legacy/=    | Retired hackathon files (see =legacy/README.md=)                                          |
+
+* How it works
+
+#+begin_example
+ participant ──HTTP──▶ backend ──┬──▶ IPFS (primary Kubo) ──▶ backup Kubo / Pinning Service
+  (bearer token)        │        │      full record as one raw block, CID computed locally
+                        │        │
+                        │        └──▶ EVM: OilseedValueChain
+                        │               recordDigest, custody, stage, per-batch hash chain
+                        │               event RecordAnchored(..., contentHash, cid)
+                        ▼
+                     SQLite: operation journal, participants, pin queue, read index
+
+ consumer ──▶ /api/skus/{id}/verify ──▶ chain events + IPFS blocks, re-hashed and re-checked
+#+end_example
+
+For every write, the backend:
+
+1. Validates the request and checks the caller's on-chain role and custody.
+2. Builds a canonical JSON record, splits out the type's private fields and encrypts them (AES-256-GCM).
+3. Computes =contentHash=, =recordDigest= and the CID before anything leaves the server.
+4. Stores the block on IPFS and verifies the CID the node returns.
+5. Sends the transaction. The contract recomputes the digest, enforces roles and stage transitions, and
+   extends the batch's hash chain.
+6. Queues the block for replication to every configured backup target.
+
+Each step is journaled (=prepared → stored → submitted → confirmed=), so a crash, an IPFS outage or a lost
+response resumes from where it stopped instead of duplicating work.
+
+** Identifiers
+
+| Identifier     | Definition                                                          | Purpose                                  |
+|----------------+---------------------------------------------------------------------+------------------------------------------|
+| =contentHash=  | =keccak256(canonical_json(record))= over public fields + private commitment | Commits to the record's meaning       |
+| =recordDigest= | =keccak256(abi.encode(TYPEHASH, chainId, registry, type, subject, contentHash))= | Domain-separated on-chain key; no replay across type, subject, chain or registry |
+| CID            | CIDv1, =raw= codec, =sha2-256= of the exact stored bytes            | Locator on IPFS; emitted in the event only |
+
+Full rules: [[file:docs/INTEGRITY.md][docs/INTEGRITY.md]].
+
+** Lifecycle
+
+=procured → stored → in_transit → processed → packaged= (=consumed= for processed inputs). Record types:
+farmer registration, procurement, custody transfer, warehouse inspection, logistics, processing,
+packaging, fraud report, fraud resolution, AI assessment.
+
+* Features
+
+- *Traceability.* Procurement creates a batch. Custody transfers, warehouse inspections and logistics
+  records follow. Processing splits a batch into up to 16 product batches. Packaging creates an SKU with a
+  Merkle root over its unit ids. The contract enforces roles, custody and stage transitions, and rejects
+  duplicate records.
+- *Verification.* Every record is re-fetched from IPFS, checked against its CID, re-hashed and compared
+  with the chain. The per-batch hash chain proves no record is missing, extra or reordered. A consumer can
+  check a single unit's Merkle proof on-chain.
+- *Selective disclosure.* Private fields are declared per record type (farmer =profile= and
+  =wallet_address=; fraud =description= and =evidence_cids=). They are encrypted with a salted commitment.
+  Public fields stay verifiable by anyone, without a key.
+- *IPFS availability.* Every stored block is replicated to backup Kubo nodes (bytes pushed, CID checked,
+  read back) and/or an IPFS Pinning Service API provider (e.g. Pinata). The queue is persistent and retries
+  with backoff. Verification reports show each record's replicas.
+- *Reliability.* Idempotent writes (=Idempotency-Key=), an operation journal, dropped-transaction resend,
+  and a background reconciler. Pending and confirmed states are reported separately.
+- *NFTs.* One provenance NFT per verified procurement record, minted with =/api/nft/mint-from-tx=. It can
+  only be held by the batch's current custodian. Farmer credentials are soulbound (ERC-5192). Metadata is
+  on IPFS as =ipfs://<cid>=.
+- *Fraud review.* Any participant can report. An admin who is not the reporter resolves it, with an
+  attribution. Upheld findings attributed to the farmer lower that farmer's ranking.
+- *AI.*
+  - Farmer supply-reliability ranking: a transparent empirical-Bayes model (not trained ML). It handles
+    cold start and reports confidence and per-feature explanations. It is explicitly not a credit score.
+    See [[file:docs/RANKING.md][docs/RANKING.md]].
+  - Commit–reveal anchoring of AI assessments, revealed 1–24 h after commit.
+  - Offline advisory through a local Gemma 3n served by Ollama. Disabled (503) unless configured. No model
+    is bundled.
+
+** Not implemented
+
+These deck items have no code or data in this repo: crop prediction and NDVI yield models, credit and
+insurance workflows, Agri-Stack, eNAM and Bhuvan integrations, policymaker dashboards. See "Remaining work"
+in [[file:docs/ARCHITECTURE.md][docs/ARCHITECTURE.md]].
+
+* Quick start (local)
+
+Requirements: Rust (stable), Foundry (=forge=, =anvil=), Kubo (=ipfs=), =openssl=, =python3=. Node is only
+needed for the frontend syntax check.
+
+#+begin_src sh
+git submodule update --init --recursive
+scripts/dev-stack.sh    # anvil + Kubo (offline) + deploy + backend + UI on http://127.0.0.1:3000
+#+end_src
+
+Everything runs from =.devstack/= (gitignored). Ctrl-C stops all processes. The admin token is in
+=.devstack/backend.env=.
+
+In the UI:
+
+1. Sign in under *Workspace* with the admin token.
+2. Onboard participants (FPO, warehouse, logistics, processor, packager, AI oracle, retailer) under *Admin*.
+   Each participant's token is shown once.
+3. Sign in as a participant to record each stage.
+4. Open *Trace* (no token needed) to verify a batch or SKU as a consumer.
+
+** Deploying to a test network
+
+Do not point this at mainnet or at a funded key unless you have decided to.
+
+#+begin_src sh
+cd contracts
+PRIVATE_KEY=<deployer key> forge script script/Deploy.s.sol --rpc-url $RPC_URL --broadcast
+#+end_src
+
+This writes =contracts/deployments/<chainId>.json=. Then set =DEPLOYMENT_FILE= and =CHAIN_ID= in
+=backend/.env=.
+
+* Configuration
+
+Copy =backend/.env.example= to =backend/.env=. Main groups:
+
+| Group      | Variables                                                                                      |
+|------------+------------------------------------------------------------------------------------------------|
+| Server     | =HOST=, =PORT=, =DATABASE_PATH=, =FRONTEND_DIR=, =CORS_ALLOWED_ORIGINS=                         |
+| Chain      | =RPC_URL=, =CHAIN_ID=, =DEPLOYMENT_FILE= (or explicit addresses), =ADMIN_PRIVATE_KEY=          |
+| IPFS       | =IPFS_API_URL=, =IPFS_GATEWAY_URL=, =IPFS_AUTH_HEADER=, =IPFS_TIMEOUT_SECS=, =IPFS_MAX_RETRIES= |
+| IPFS backup | =IPFS_BACKUP_KUBO_URLS=, =IPFS_BACKUP_KUBO_AUTH_HEADER=, =IPFS_PINNING_SERVICE_URL= + =_TOKEN=, =IPFS_BACKUP_MAX_ATTEMPTS= |
+| Secrets    | =ADMIN_API_TOKEN=, =KEY_ENCRYPTION_KEY=, =PII_ENCRYPTION_KEY= (generate with =openssl rand -hex 32=) |
+| Advisory   | =ADVISORY_BASE_URL=, =ADVISORY_MODEL=, =ADVISORY_LANGUAGES=                                    |
+
+Never commit a real =.env=. The two encryption keys must differ.
+
+* API
+
+All routes, auth rules and response shapes: [[file:docs/API.md][docs/API.md]]. The most useful public ones:
+
+| Route                                   | Returns                                             |
+|-----------------------------------------+-----------------------------------------------------|
+| =GET /api/batches/{id}/provenance=      | Full lineage, every record re-verified              |
+| =GET /api/skus/{id}/verify?unit_id==    | SKU origin, on-chain unit proof and provenance      |
+| =GET /api/records/{digest}/verify=      | One record's verification                           |
+| =GET /api/nft/provenance/{token_id}=    | NFT owner, custody alignment and source record check |
+| =GET /api/ipfs/pins/{cid}=              | Backup replication state of one block               |
+
+Writes return an operation view. =200= means confirmed, =202= means in progress (poll or retry with the
+same =Idempotency-Key=), =409= means the contract rejected it, with the custom error name.
+
+* Tests
+
+#+begin_src sh
+scripts/check.sh    # everything CI runs
+scripts/e2e.sh      # end-to-end only
+#+end_src
+
+=check.sh= runs:
+
+- Contracts: =forge fmt=, build, unit and invariant tests, =forge snapshot --check=.
+- ABI drift check between =contracts/= and =backend/abi/=.
+- Backend: =cargo fmt=, =clippy -D warnings=, unit tests and IPFS client tests.
+- Frontend syntax check.
+- End-to-end test against real =anvil= and two real Kubo nodes (skipped if they are not on =PATH=).
+
+The end-to-end test drives every stage, idempotent retries, auth, NFT minting, SKU unit proofs, fraud
+review, AI reveal, rankings, the advisory adapter, an IPFS outage, a lost response, backup replication,
+and tamper detection (digest, hash, missing content, exposed private field, bad commitment).
+
+After changing a contract, run =scripts/export-artifacts.sh= so the backend bindings match.
+
+* Gas
+
+Only 32-byte hashes, ids and custody state are stored on-chain. The CID appears only in the
+=RecordAnchored= event. Record contents, lab reports, GPS traces and attachments live on IPFS, so per-record
+gas stays roughly fixed whatever the record's size. Storing the same data in contract storage would cost
+about 22,100 gas per 32 bytes.
+
+Per-function gas is tracked in =contracts/.gas-snapshot= and checked in CI. No all-on-chain baseline
+contract exists in this repo, so there is no measured percentage saving.
+
+* Known limitations
+
+- Participant wallets are custodial (keys sealed in SQLite with =KEY_ENCRYPTION_KEY=).
+- Single admin, single backend instance, no per-client rate limiting.
+- The Pinning Service API client is tested only against a fake server. The provider must be able to reach
+  the primary IPFS node, and its =pinned= status is not re-downloaded to check.
+- The frontend has not been visually tested.
+
+* Documentation
+
+- [[file:docs/ARCHITECTURE.md][docs/ARCHITECTURE.md]]: components, trust model, storage, remaining work.
+- [[file:docs/INTEGRITY.md][docs/INTEGRITY.md]]: serialization, hashing, CIDs, encryption, verification algorithm.
+- [[file:docs/RANKING.md][docs/RANKING.md]]: ranking model, features, cold start, limits.
+- [[file:docs/API.md][docs/API.md]]: every endpoint.

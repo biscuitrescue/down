@@ -11,11 +11,14 @@ env:
   FOUNDRY_PROFILE: ci
 
 jobs:
-  check:
-    name: Foundry project
+  contracts:
+    name: Contracts (Foundry)
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    defaults:
+      run:
+        working-directory: contracts
     steps:
       - uses: actions/checkout@v5
         with:
@@ -36,3 +39,47 @@ jobs:
 
       - name: Run Forge tests
         run: forge test -vvv
+
+      - name: Gas snapshot is current
+        run: forge snapshot --check --no-match-contract Invariant
+
+      - name: Backend ABI artifacts match the contracts
+        working-directory: .
+        run: scripts/export-artifacts.sh --check
+
+  backend:
+    name: Backend (Rust) + end-to-end
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry (anvil for e2e)
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install Kubo (IPFS) for e2e
+        run: |
+          curl -sSfL -o kubo.tgz https://github.com/ipfs/kubo/releases/download/v0.32.1/kubo_v0.32.1_linux-amd64.tar.gz
+          tar xzf kubo.tgz
+          echo "$PWD/kubo" >> "$GITHUB_PATH"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: fmt / clippy / unit + integration tests
+        working-directory: backend
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+
+      - name: End-to-end (anvil + Kubo)
+        run: scripts/e2e.sh
+
+      - name: Frontend syntax
+        run: for f in frontend/*.js; do node --check "$f"; done

@@ -1,0 +1,63 @@
+[package]
+name = "oilschain-backend"
+version = "0.2.0"
+edition = "2021"
+description = "OilsChain traceability API: IPFS records anchored to EVM contracts"
+publish = false
+
+[lib]
+name = "oilschain"
+path = "src/lib.rs"
+
+[[bin]]
+name = "oilschain-backend"
+path = "src/main.rs"
+
+[dependencies]
+# Web framework
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower = { version = "0.5", features = ["limit", "util"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs", "limit", "timeout"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Environment variables
+dotenvy = "0.15"
+
+# HTTP client for IPFS and the local advisory model
+reqwest = { version = "0.12", default-features = false, features = ["multipart", "json", "rustls-tls"] }
+
+# Date and time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Random number generation
+rand = "0.8"
+
+# Encoding / hashing / crypto
+hex = "0.4"
+sha2 = "0.10"
+base64 = "0.22"
+bs58 = "0.5"
+data-encoding = "2"
+aes-gcm = "0.10"
+subtle = "2"
+
+# Persistence
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Ethereum / Blockchain (bindings are generated from the Foundry artifacts in ../contracts/out)
+alloy = { version = "1", features = ["json"] }
+
+[dev-dependencies]
+tempfile = "3"
